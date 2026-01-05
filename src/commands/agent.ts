@@ -19,8 +19,49 @@ interface AgentOptions {
   maxBudget?: number;
 }
 
+// ============================================
+// DEPRECATION NOTICE
+// ============================================
+// The 'husky agent' commands are DEPRECATED and will be removed in a future version.
+//
+// The new architecture has Claude Code (or any AI agent) as the main process,
+// and uses 'husky task' commands as Bash tools for communication.
+//
+// Migration Guide:
+// ----------------
+// OLD (deprecated):
+//   husky agent plan --session-id xyz --prompt "..."
+//   husky agent wait-approval --session-id xyz
+//   husky agent execute --session-id xyz
+//
+// NEW (recommended):
+//   export HUSKY_TASK_ID="xyz"
+//   husky task status "Working on task..."
+//   husky task plan --summary "Plan description" --steps "step1,step2"
+//   husky task wait-approval --timeout 1800
+//   husky task complete --output "Done" --pr "https://..."
+//
+// The new approach is agent-agnostic - works with Claude Code, Gemini, Codex, etc.
+// ============================================
+
+function showDeprecationWarning(command: string) {
+  console.warn("\n" + "=".repeat(60));
+  console.warn("DEPRECATION WARNING");
+  console.warn("=".repeat(60));
+  console.warn(`The 'husky agent ${command}' command is deprecated.`);
+  console.warn("");
+  console.warn("Please migrate to the new 'husky task' commands:");
+  console.warn("  husky task status <message>    - Report progress");
+  console.warn("  husky task plan --summary ...  - Submit plan");
+  console.warn("  husky task wait-approval       - Wait for approval");
+  console.warn("  husky task complete --output   - Mark complete");
+  console.warn("");
+  console.warn("Set HUSKY_TASK_ID environment variable instead of --session-id");
+  console.warn("=".repeat(60) + "\n");
+}
+
 export const agentCommand = new Command("agent").description(
-  "Run Claude Agent for automated code tasks"
+  "[DEPRECATED] Run Claude Agent for automated code tasks. Use 'husky task' commands instead."
 );
 
 // husky agent plan
@@ -35,6 +76,8 @@ agentCommand
   .option("--workdir <path>", "Working directory", process.cwd())
   .option("--max-budget <usd>", "Max budget in USD", "2.0")
   .action(async (options) => {
+    showDeprecationWarning("plan");
+
     const streamClient = new StreamClient(
       options.apiUrl,
       options.sessionId,
@@ -117,6 +160,8 @@ agentCommand
   .option("--github-token <token>", "GitHub token for commits")
   .option("--max-budget <usd>", "Max budget in USD", "5.0")
   .action(async (options) => {
+    showDeprecationWarning("execute");
+
     const streamClient = new StreamClient(
       options.apiUrl,
       options.sessionId,
@@ -204,6 +249,8 @@ agentCommand
   .requiredOption("--api-key <key>", "Husky API Key")
   .option("--timeout <seconds>", "Timeout in seconds", "1800")
   .action(async (options) => {
+    showDeprecationWarning("wait-approval");
+
     const timeoutMs = parseInt(options.timeout) * 1000;
 
     console.error(`Waiting for approval (timeout: ${options.timeout}s)...`);
