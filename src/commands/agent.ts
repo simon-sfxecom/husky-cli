@@ -1,0 +1,374 @@
+import { Command } from "commander";
+import { spawn } from "child_process";
+import {
+  StreamClient,
+  updateSessionStatus,
+  submitPlan,
+  waitForApproval,
+} from "../lib/streaming.js";
+
+interface AgentOptions {
+  sessionId: string;
+  prompt?: string;
+  apiUrl: string;
+  apiKey: string;
+  anthropicKey: string;
+  workdir?: string;
+  githubToken?: string;
+  timeout?: number;
+  maxBudget?: number;
+}
+
+export const agentCommand = new Command("agent").description(
+  "Run Claude Agent for automated code tasks"
+);
+
+// husky agent plan
+agentCommand
+  .command("plan")
+  .description("Generate an execution plan using Claude")
+  .requiredOption("--session-id <id>", "VM Session ID")
+  .requiredOption("--prompt <prompt>", "Task prompt")
+  .requiredOption("--api-url <url>", "Husky API URL")
+  .requiredOption("--api-key <key>", "Husky API Key")
+  .requiredOption("--anthropic-key <key>", "Anthropic API Key")
+  .option("--workdir <path>", "Working directory", process.cwd())
+  .option("--max-budget <usd>", "Max budget in USD", "2.0")
+  .action(async (options) => {
+    const streamClient = new StreamClient(
+      options.apiUrl,
+      options.sessionId,
+      options.apiKey
+    );
+
+    try {
+      await streamClient.system("Starting plan generation...");
+      await updateSessionStatus(
+        options.apiUrl,
+        options.sessionId,
+        options.apiKey,
+        "planning"
+      );
+
+      // Use Claude Code CLI in plan mode
+      const planPrompt = `You are in PLAN MODE. Analyze the following task and create a detailed execution plan. Do NOT execute any changes yet.
+
+TASK: ${options.prompt}
+
+Create a structured plan with:
+1. Step-by-step actions needed
+2. Files that will be modified
+3. Risk assessment (low/medium/high) for each step
+4. Estimated time for execution
+
+Output your plan in a clear, numbered format. After planning, use the ExitPlanMode tool to indicate completion.`;
+
+      await streamClient.system("Invoking Claude for planning...");
+
+      // Run Claude Code in print mode for planning
+      const result = await runClaudeCode(
+        planPrompt,
+        options.workdir,
+        options.anthropicKey,
+        streamClient,
+        parseFloat(options.maxBudget)
+      );
+
+      // Parse the plan from Claude's output
+      const plan = parsePlanFromOutput(result.output);
+
+      // Submit plan to Husky
+      await submitPlan(options.apiUrl, options.sessionId, options.apiKey, plan);
+
+      await updateSessionStatus(
+        options.apiUrl,
+        options.sessionId,
+        options.apiKey,
+        "awaiting_approval"
+      );
+
+      await streamClient.system("Plan submitted. Waiting for approval...");
+
+      console.log("Plan generated successfully");
+      process.exit(0);
+    } catch (error) {
+      await streamClient.stderr(`Plan generation failed: ${error}`);
+      await updateSessionStatus(
+        options.apiUrl,
+        options.sessionId,
+        options.apiKey,
+        "failed",
+        { lastError: String(error) }
+      );
+      console.error("Plan generation failed:", error);
+      process.exit(1);
+    }
+  });
+
+// husky agent execute
+agentCommand
+  .command("execute")
+  .description("Execute the approved plan")
+  .requiredOption("--session-id <id>", "VM Session ID")
+  .requiredOption("--api-url <url>", "Husky API URL")
+  .requiredOption("--api-key <key>", "Husky API Key")
+  .requiredOption("--anthropic-key <key>", "Anthropic API Key")
+  .option("--workdir <path>", "Working directory", process.cwd())
+  .option("--github-token <token>", "GitHub token for commits")
+  .option("--max-budget <usd>", "Max budget in USD", "5.0")
+  .action(async (options) => {
+    const streamClient = new StreamClient(
+      options.apiUrl,
+      options.sessionId,
+      options.apiKey
+    );
+
+    try {
+      await streamClient.system("Starting execution...");
+      await updateSessionStatus(
+        options.apiUrl,
+        options.sessionId,
+        options.apiKey,
+        "running"
+      );
+
+      // Set GitHub token if provided
+      if (options.githubToken) {
+        process.env.GITHUB_TOKEN = options.githubToken;
+      }
+
+      // Fetch the original prompt from the session
+      const sessionResponse = await fetch(
+        `${options.apiUrl}/api/vm-sessions/${options.sessionId}`,
+        {
+          headers: { "X-API-Key": options.apiKey },
+        }
+      );
+
+      if (!sessionResponse.ok) {
+        throw new Error("Failed to fetch session details");
+      }
+
+      const session = await sessionResponse.json();
+      const prompt = session.prompt;
+
+      await streamClient.system(`Executing task: ${prompt}`);
+
+      // Run Claude Code to execute the task
+      const result = await runClaudeCode(
+        prompt,
+        options.workdir,
+        options.anthropicKey,
+        streamClient,
+        parseFloat(options.maxBudget)
+      );
+
+      await streamClient.system(`Execution completed with exit code: ${result.exitCode}`);
+
+      // Report completion
+      await fetch(`${options.apiUrl}/api/webhooks/vm/completion`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": options.apiKey,
+        },
+        body: JSON.stringify({
+          sessionId: options.sessionId,
+          exitCode: result.exitCode,
+          output: result.output,
+        }),
+      });
+
+      console.log("Execution completed");
+      process.exit(result.exitCode);
+    } catch (error) {
+      await streamClient.stderr(`Execution failed: ${error}`);
+      await updateSessionStatus(
+        options.apiUrl,
+        options.sessionId,
+        options.apiKey,
+        "failed",
+        { lastError: String(error) }
+      );
+      console.error("Execution failed:", error);
+      process.exit(1);
+    }
+  });
+
+// husky agent wait-approval
+agentCommand
+  .command("wait-approval")
+  .description("Wait for plan approval")
+  .requiredOption("--session-id <id>", "VM Session ID")
+  .requiredOption("--api-url <url>", "Husky API URL")
+  .requiredOption("--api-key <key>", "Husky API Key")
+  .option("--timeout <seconds>", "Timeout in seconds", "1800")
+  .action(async (options) => {
+    const timeoutMs = parseInt(options.timeout) * 1000;
+
+    console.error(`Waiting for approval (timeout: ${options.timeout}s)...`);
+
+    const result = await waitForApproval(
+      options.apiUrl,
+      options.sessionId,
+      options.apiKey,
+      timeoutMs
+    );
+
+    // Output result to stdout for shell script to capture
+    console.log(result);
+    process.exit(result === "approved" ? 0 : 1);
+  });
+
+/**
+ * Run Claude Code CLI and stream output
+ */
+async function runClaudeCode(
+  prompt: string,
+  workdir: string,
+  anthropicKey: string,
+  streamClient: StreamClient,
+  maxBudgetUsd: number
+): Promise<{ exitCode: number; output: string }> {
+  return new Promise((resolve, reject) => {
+    const outputLines: string[] = [];
+
+    // Spawn Claude Code process
+    const claude = spawn(
+      "claude",
+      [
+        "-p",
+        prompt,
+        "--output-format",
+        "stream-json",
+        "--max-turns",
+        "50",
+      ],
+      {
+        cwd: workdir,
+        env: {
+          ...process.env,
+          ANTHROPIC_API_KEY: anthropicKey,
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      }
+    );
+
+    claude.stdout.on("data", async (data) => {
+      const text = data.toString();
+      outputLines.push(text);
+
+      // Try to parse JSON messages
+      const lines = text.split("\n").filter(Boolean);
+      for (const line of lines) {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.type === "assistant" && msg.message?.content) {
+            for (const block of msg.message.content) {
+              if (block.type === "text") {
+                await streamClient.stdout(block.text);
+              } else if (block.type === "tool_use") {
+                await streamClient.system(
+                  `Using tool: ${block.name}`
+                );
+              }
+            }
+          } else if (msg.type === "result") {
+            await streamClient.system(
+              `Cost: $${msg.cost_usd?.toFixed(4) || "unknown"}`
+            );
+          }
+        } catch {
+          // Not JSON, send as plain text
+          await streamClient.stdout(line);
+        }
+      }
+    });
+
+    claude.stderr.on("data", async (data) => {
+      const text = data.toString();
+      outputLines.push(text);
+      await streamClient.stderr(text);
+    });
+
+    claude.on("error", (error) => {
+      reject(error);
+    });
+
+    claude.on("close", (code) => {
+      resolve({
+        exitCode: code ?? 1,
+        output: outputLines.join("\n").slice(0, 500000), // Limit to 500KB
+      });
+    });
+  });
+}
+
+/**
+ * Parse plan from Claude's output
+ */
+function parsePlanFromOutput(output: string): {
+  steps: Array<{
+    order: number;
+    description: string;
+    files: string[];
+    risk: "low" | "medium" | "high";
+  }>;
+  estimatedCost: number;
+  estimatedRuntime: number;
+} {
+  // Simple parsing - extract numbered steps
+  const steps: Array<{
+    order: number;
+    description: string;
+    files: string[];
+    risk: "low" | "medium" | "high";
+  }> = [];
+
+  const lines = output.split("\n");
+  let currentStep = 0;
+
+  for (const line of lines) {
+    // Match numbered steps like "1." or "Step 1:"
+    const stepMatch = line.match(/^(?:Step\s+)?(\d+)[.):]\s*(.+)/i);
+    if (stepMatch) {
+      currentStep = parseInt(stepMatch[1]);
+      const description = stepMatch[2].trim();
+
+      // Extract file paths mentioned
+      const fileMatches = description.match(/`([^`]+\.[a-z]+)`/g) || [];
+      const files = fileMatches.map((f) => f.replace(/`/g, ""));
+
+      // Determine risk level based on keywords
+      let risk: "low" | "medium" | "high" = "low";
+      if (/delete|remove|drop|danger/i.test(description)) {
+        risk = "high";
+      } else if (/modify|change|update|refactor/i.test(description)) {
+        risk = "medium";
+      }
+
+      steps.push({
+        order: currentStep,
+        description,
+        files,
+        risk,
+      });
+    }
+  }
+
+  // If no steps found, create a generic one
+  if (steps.length === 0) {
+    steps.push({
+      order: 1,
+      description: "Execute task as specified",
+      files: [],
+      risk: "medium",
+    });
+  }
+
+  return {
+    steps,
+    estimatedCost: 0.5, // Placeholder
+    estimatedRuntime: 5, // 5 minutes placeholder
+  };
+}

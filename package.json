@@ -1,0 +1,30 @@
+{
+  "name": "@huskyv0/cli",
+  "version": "0.2.0",
+  "description": "CLI for Huskyv0 Task Orchestration with Claude Agent SDK",
+  "type": "module",
+  "bin": {
+    "husky": "./dist/index.js",
+    "husky-agent": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/huskyv0/husky-agent.git"
+  }
+}
