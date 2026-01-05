@@ -375,6 +375,232 @@ taskCommand
         process.exit(1);
     }
 });
+// ============================================
+// QA VALIDATION COMMANDS
+// ============================================
+// husky task qa-start [--id <id>] [--max-iterations <n>]
+taskCommand
+    .command("qa-start")
+    .description("Start QA validation for a task")
+    .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
+    .option("--max-iterations <n>", "Max QA iterations", "5")
+    .option("--no-auto-fix", "Disable automatic fix attempts")
+    .action(async (options) => {
+    const config = ensureConfig();
+    const taskId = getTaskId(options);
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/start`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+                maxIterations: parseInt(options.maxIterations, 10),
+                autoFix: options.autoFix !== false,
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        const data = await res.json();
+        console.log(`✓ QA validation started for task ${taskId}`);
+        console.log(`  Max iterations: ${data.maxIterations}`);
+        console.log(`  Status: ${data.qaStatus}`);
+    }
+    catch (error) {
+        console.error("Error starting QA:", error);
+        process.exit(1);
+    }
+});
+// husky task qa-status [--id <id>] [--json]
+taskCommand
+    .command("qa-status")
+    .description("Get QA validation status for a task")
+    .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
+    .option("--json", "Output as JSON")
+    .action(async (options) => {
+    const config = ensureConfig();
+    const taskId = getTaskId(options);
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/status`, {
+            headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        const data = await res.json();
+        if (options.json) {
+            console.log(JSON.stringify(data, null, 2));
+        }
+        else {
+            console.log(`\n  QA Status: ${data.taskTitle}`);
+            console.log("  " + "─".repeat(50));
+            console.log(`  Status:        ${data.qaStatus}`);
+            console.log(`  Iterations:    ${data.iterations.total}/${data.qaMaxIterations}`);
+            console.log(`  Approved:      ${data.iterations.approved}`);
+            console.log(`  Rejected:      ${data.iterations.rejected}`);
+            console.log(`  Errors:        ${data.iterations.errors}`);
+            if (data.latestIssues && data.latestIssues.length > 0) {
+                console.log(`\n  Latest Issues:`);
+                for (const issue of data.latestIssues.slice(0, 5)) {
+                    const icon = issue.type === "critical" ? "🔴" : issue.type === "major" ? "🟠" : "🟡";
+                    console.log(`    ${icon} [${issue.type}] ${issue.title}`);
+                }
+            }
+            if (data.isComplete) {
+                console.log(`\n  ✓ QA Complete: ${data.qaStatus}`);
+            }
+            else if (data.requiresHumanReview) {
+                console.log(`\n  ⚠ Human review required`);
+            }
+            console.log("");
+        }
+    }
+    catch (error) {
+        console.error("Error getting QA status:", error);
+        process.exit(1);
+    }
+});
+// husky task qa-approve [--id <id>] [--notes <text>]
+taskCommand
+    .command("qa-approve")
+    .description("Manually approve QA for a task")
+    .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
+    .option("--notes <text>", "Approval notes")
+    .action(async (options) => {
+    const config = ensureConfig();
+    const taskId = getTaskId(options);
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/approve`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+                approved: true,
+                notes: options.notes,
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        console.log(`✓ QA manually approved for task ${taskId}`);
+    }
+    catch (error) {
+        console.error("Error approving QA:", error);
+        process.exit(1);
+    }
+});
+// husky task qa-reject [--id <id>] [--notes <text>]
+taskCommand
+    .command("qa-reject")
+    .description("Manually reject QA for a task")
+    .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
+    .option("--notes <text>", "Rejection notes")
+    .action(async (options) => {
+    const config = ensureConfig();
+    const taskId = getTaskId(options);
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/approve`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+                approved: false,
+                notes: options.notes,
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        console.log(`✗ QA manually rejected for task ${taskId}`);
+    }
+    catch (error) {
+        console.error("Error rejecting QA:", error);
+        process.exit(1);
+    }
+});
+// husky task qa-iteration [--id <id>] --iteration <n> --status <status> [--issues <json>] [--duration <seconds>]
+taskCommand
+    .command("qa-iteration")
+    .description("Add a QA iteration result (for agents)")
+    .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
+    .requiredOption("--iteration <n>", "Iteration number")
+    .requiredOption("--status <status>", "Status (approved, rejected, error)")
+    .option("--issues <json>", "Issues as JSON array")
+    .option("--duration <seconds>", "Duration in seconds", "0")
+    .action(async (options) => {
+    const config = ensureConfig();
+    const taskId = getTaskId(options);
+    // Parse issues
+    let issues = [];
+    if (options.issues) {
+        try {
+            issues = JSON.parse(options.issues);
+        }
+        catch {
+            console.error("Error: --issues must be valid JSON");
+            process.exit(1);
+        }
+    }
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/iteration`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+                iteration: parseInt(options.iteration, 10),
+                status: options.status,
+                issues,
+                duration: parseFloat(options.duration),
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        const data = await res.json();
+        console.log(`✓ QA iteration ${options.iteration} recorded`);
+        console.log(`  Status: ${data.qaStatus}`);
+        console.log(`  Issues: ${data.issuesCount}`);
+        console.log(`  ${data.message}`);
+    }
+    catch (error) {
+        console.error("Error adding QA iteration:", error);
+        process.exit(1);
+    }
+});
+// husky task qa-escalate [--id <id>]
+taskCommand
+    .command("qa-escalate")
+    .description("Escalate QA to human review")
+    .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
+    .action(async (options) => {
+    const config = ensureConfig();
+    const taskId = getTaskId(options);
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/approve`, {
+            method: "PUT", // PUT for escalation
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        console.log(`⚠ QA escalated to human review for task ${taskId}`);
+    }
+    catch (error) {
+        console.error("Error escalating QA:", error);
+        process.exit(1);
+    }
+});
 function printTasks(tasks) {
     const byStatus = {
         backlog: [],

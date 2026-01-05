@@ -1,6 +1,6 @@
 {
   "name": "@huskyv0/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "CLI for Huskyv0 Task Orchestration with Claude Agent SDK",
   "type": "module",
   "bin": {
