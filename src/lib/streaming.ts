@@ -1,17 +1,30 @@
 /**
  * StreamClient - Sends output to Husky Dashboard via SSE
+ * Uses batching to reduce API calls
  */
 export class StreamClient {
+  private buffer: Array<{ content: string; type: string }> = [];
+  private flushTimeout: ReturnType<typeof setTimeout> | null = null;
+  private flushIntervalMs = 500; // Batch window: 500ms
+  private maxBufferSize = 50; // Force flush after 50 items
+
   constructor(
     private apiUrl: string,
     private sessionId: string,
     private apiKey: string
   ) {}
 
-  async send(
-    content: string,
-    type: "stdout" | "stderr" | "system" | "plan"
-  ): Promise<void> {
+  private async flushBuffer(): Promise<void> {
+    if (this.buffer.length === 0) return;
+
+    const items = [...this.buffer];
+    this.buffer = [];
+
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+      this.flushTimeout = null;
+    }
+
     try {
       const response = await fetch(
         `${this.apiUrl}/api/vm-sessions/${this.sessionId}/stream`,
@@ -22,9 +35,10 @@ export class StreamClient {
             "X-API-Key": this.apiKey,
           },
           body: JSON.stringify({
-            content,
-            type,
-            timestamp: new Date().toISOString(),
+            batch: items.map((item) => ({
+              ...item,
+              timestamp: new Date().toISOString(),
+            })),
           }),
         }
       );
@@ -33,9 +47,39 @@ export class StreamClient {
         console.error(`Stream error: ${response.status}`);
       }
     } catch (error) {
-      // Don't fail the main process if streaming fails
       console.error("Stream connection error:", error);
     }
+  }
+
+  private scheduleFlush(): void {
+    if (this.buffer.length >= this.maxBufferSize) {
+      // Force immediate flush if buffer is full
+      this.flushBuffer();
+      return;
+    }
+
+    if (!this.flushTimeout) {
+      this.flushTimeout = setTimeout(() => {
+        this.flushBuffer();
+      }, this.flushIntervalMs);
+    }
+  }
+
+  async send(
+    content: string,
+    type: "stdout" | "stderr" | "system" | "plan"
+  ): Promise<void> {
+    this.buffer.push({ content, type });
+    this.scheduleFlush();
+  }
+
+  // Immediate send for important messages (system, plan)
+  async sendImmediate(
+    content: string,
+    type: "stdout" | "stderr" | "system" | "plan"
+  ): Promise<void> {
+    this.buffer.push({ content, type });
+    await this.flushBuffer();
   }
 
   stdout(content: string): Promise<void> {
@@ -47,18 +91,16 @@ export class StreamClient {
   }
 
   system(content: string): Promise<void> {
-    return this.send(content, "system");
+    return this.sendImmediate(content, "system");
   }
 
   plan(content: string): Promise<void> {
-    return this.send(content, "plan");
+    return this.sendImmediate(content, "plan");
   }
 
-  // Batch send multiple lines
-  async sendLines(lines: string[], type: "stdout" | "stderr"): Promise<void> {
-    for (const line of lines) {
-      await this.send(line, type);
-    }
+  // Force flush remaining buffer (call before exit)
+  async flush(): Promise<void> {
+    await this.flushBuffer();
   }
 }
 

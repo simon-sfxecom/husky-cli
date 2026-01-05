@@ -1,17 +1,25 @@
 /**
  * StreamClient - Sends output to Husky Dashboard via SSE
+ * Uses batching to reduce API calls
  */
 export declare class StreamClient {
     private apiUrl;
     private sessionId;
     private apiKey;
+    private buffer;
+    private flushTimeout;
+    private flushIntervalMs;
+    private maxBufferSize;
     constructor(apiUrl: string, sessionId: string, apiKey: string);
+    private flushBuffer;
+    private scheduleFlush;
     send(content: string, type: "stdout" | "stderr" | "system" | "plan"): Promise<void>;
+    sendImmediate(content: string, type: "stdout" | "stderr" | "system" | "plan"): Promise<void>;
     stdout(content: string): Promise<void>;
     stderr(content: string): Promise<void>;
     system(content: string): Promise<void>;
     plan(content: string): Promise<void>;
-    sendLines(lines: string[], type: "stdout" | "stderr"): Promise<void>;
+    flush(): Promise<void>;
 }
 /**
  * Update session status in Husky Dashboard
