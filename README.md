@@ -251,39 +251,35 @@ npm link
 
 ## Publishing / Release
 
-The CLI is automatically published to npm via GitHub Actions using OIDC Trusted Publishing.
-
 ### Publishing a New Version
 
-1. **Update version in `package.json`:**
-   ```bash
-   cd packages/cli
-   npm version patch  # or minor/major
-   ```
+```bash
+cd packages/cli
 
-2. **Commit and push:**
-   ```bash
-   git add .
-   git commit -m "chore(cli): bump version to x.x.x"
-   git push origin main
-   ```
+# 1. Bump version
+npm version patch  # or minor/major
 
-3. **Automatic publishing:**
-   - Changes in `packages/cli/**` trigger sync to `simon-sfxecom/husky-cli` (public repo)
-   - Public repo publishes to npm with OIDC provenance
-   - No `NPM_TOKEN` secret required (OIDC Trusted Publishing)
+# 2. Publish to npm (opens browser for authentication)
+npm publish --access public
 
-### Manual Trigger
+# 3. Commit and push
+git add .
+git commit -m "chore(cli): release vX.X.X"
+git push origin main
+```
 
-If needed, the workflow can be triggered manually:
-- GitHub > Actions > "Sync CLI to Public Repo" > "Run workflow"
+### Updating on Other Devices
 
-### npm Trusted Publishing Setup
+```bash
+# Update to latest version
+npm update -g @simonfestl/husky-cli
 
-The package uses OIDC-based publishing. Configuration on npmjs.com:
-- Package Settings > Publishing access > Configure trusted publishing
-- Repository: `simon-sfxecom/husky-cli`
-- Workflow: `publish.yml`
+# Or reinstall
+npm install -g @simonfestl/husky-cli
+
+# Check installed version
+husky --version
+```
 
 ## Changelog
 
