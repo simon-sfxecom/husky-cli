@@ -1,6 +1,6 @@
 {
   "name": "@simonfestl/husky-cli",
-  "version": "0.6.0",
+  "version": "0.8.3",
   "description": "CLI for Huskyv0 Task Orchestration with Claude Agent SDK",
   "type": "module",
   "bin": {
@@ -10,7 +10,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration"
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.0",
@@ -19,7 +24,11 @@
   },
   "devDependencies": {
     "@types/node": "^22",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.8",
+    "@vitest/coverage-v8": "^2.1.8",
+    "msw": "^2.6.8",
+    "memfs": "^4.14.0"
   },
   "files": [
     "dist"
