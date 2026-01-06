@@ -13,6 +13,7 @@ import { julesSessionsMenu } from "./interactive/jules-sessions.js";
 import { roadmapsMenu } from "./interactive/roadmaps.js";
 import { strategyMenu } from "./interactive/strategy.js";
 import { changelogMenu } from "./interactive/changelog.js";
+import { worktreesMenu } from "./interactive/worktrees.js";
 import { clearScreen, printHeader, pressEnterToContinue, ValidConfig } from "./interactive/utils.js";
 
 // Menu item type
@@ -45,6 +46,7 @@ export async function runInteractiveMode(): Promise<void> {
       { name: "---", value: "separator2", description: "" },
       { name: "VM Sessions", value: "vm", description: "Manage VM sessions" },
       { name: "Jules Sessions", value: "jules", description: "Manage Jules AI sessions" },
+      { name: "Worktrees", value: "worktrees", description: "Manage Git worktrees for agent isolation" },
       { name: "---", value: "separator3", description: "" },
       { name: "Business Strategy", value: "strategy", description: "Manage business strategy" },
       { name: "Changelog", value: "changelog", description: "Generate and manage changelogs" },
@@ -87,6 +89,9 @@ export async function runInteractiveMode(): Promise<void> {
           break;
         case "jules":
           await julesSessionsMenu();
+          break;
+        case "worktrees":
+          await worktreesMenu();
           break;
         case "strategy":
           await strategyMenu();

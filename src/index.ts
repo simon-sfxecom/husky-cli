@@ -18,6 +18,7 @@ import { processCommand } from "./commands/process.js";
 import { settingsCommand } from "./commands/settings.js";
 import { strategyCommand } from "./commands/strategy.js";
 import { completionCommand } from "./commands/completion.js";
+import { worktreeCommand } from "./commands/worktree.js";
 import { runInteractiveMode } from "./commands/interactive.js";
 
 const program = new Command();
@@ -25,7 +26,7 @@ const program = new Command();
 program
   .name("husky")
   .description("CLI for Huskyv0 Task Orchestration with Claude Agent")
-  .version("0.5.2");
+  .version("0.6.0");
 
 program.addCommand(taskCommand);
 program.addCommand(configCommand);
@@ -44,6 +45,7 @@ program.addCommand(processCommand);
 program.addCommand(settingsCommand);
 program.addCommand(strategyCommand);
 program.addCommand(completionCommand);
+program.addCommand(worktreeCommand);
 
 // Check if no command was provided - run interactive mode
 if (process.argv.length <= 2) {

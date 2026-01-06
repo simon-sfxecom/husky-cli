@@ -150,9 +150,9 @@ workflowCommand
   .command("create <name>")
   .description("Create a new workflow")
   .option("-d, --description <description>", "Workflow description")
-  .option("--value-stream <valueStream>", "Value stream", "general")
-  .option("--status <status>", "Workflow status (draft, active, paused, archived)", "draft")
-  .option("--action <action>", "Action type (manual, semi_automated, fully_automated)", "manual")
+  .option("--value-stream <valueStream>", "Value stream (order_to_delivery, procure_to_pay, returns_management, product_lifecycle, customer_service, finance_admin)", "customer_service")
+  .option("--status <status>", "Workflow status (owner_only, approval_needed, supervised, delegated, automated)", "owner_only")
+  .option("--action <action>", "Action type (automate, hire, document, fix, ok)", "document")
   .option("--json", "Output as JSON")
   .action(async (name, options) => {
     const config = ensureConfig();
