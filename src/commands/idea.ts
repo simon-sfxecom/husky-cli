@@ -328,12 +328,14 @@ function printIdeas(ideas: Idea[]) {
   console.log("  " + "─".repeat(70));
 
   for (const idea of ideas) {
-    const statusIcon = getStatusIcon(idea.status);
-    const truncatedTitle = idea.title.length > 28 ? idea.title.substring(0, 25) + "..." : idea.title;
+    const statusIcon = getStatusIcon(idea.status || "draft");
+    const title = idea.title || "(untitled)";
+    const truncatedTitle = title.length > 28 ? title.substring(0, 25) + "..." : title;
     const category = idea.category || "-";
 
+    const status = idea.status || "draft";
     console.log(
-      `  ${idea.id.padEnd(24)} ${truncatedTitle.padEnd(30)} ${statusIcon} ${idea.status.padEnd(10)} ${category}`
+      `  ${idea.id.padEnd(24)} ${truncatedTitle.padEnd(30)} ${statusIcon} ${status.padEnd(10)} ${category}`
     );
   }
 
@@ -350,10 +352,10 @@ function printIdeas(ideas: Idea[]) {
 }
 
 function printIdeaDetail(idea: Idea) {
-  console.log(`\n  Idea: ${idea.title}`);
+  console.log(`\n  Idea: ${idea.title || "(untitled)"}`);
   console.log("  " + "─".repeat(50));
   console.log(`  ID:         ${idea.id}`);
-  console.log(`  Status:     ${idea.status}`);
+  console.log(`  Status:     ${idea.status || "draft"}`);
   if (idea.category) {
     console.log(`  Category:   ${idea.category}`);
   }
@@ -361,8 +363,8 @@ function printIdeaDetail(idea: Idea) {
     console.log(`  Description:`);
     console.log(`    ${idea.description}`);
   }
-  console.log(`  Created:    ${new Date(idea.createdAt).toLocaleString()}`);
-  console.log(`  Updated:    ${new Date(idea.updatedAt).toLocaleString()}`);
+  console.log(`  Created:    ${idea.createdAt ? new Date(idea.createdAt).toLocaleString() : "-"}`);
+  console.log(`  Updated:    ${idea.updatedAt ? new Date(idea.updatedAt).toLocaleString() : "-"}`);
   console.log("");
 }
 

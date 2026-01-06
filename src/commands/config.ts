@@ -11,13 +11,14 @@ interface Config {
   apiKey?: string;
 }
 
-// API Key validation - must be at least 16 characters and alphanumeric with dashes/underscores
+// API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
 function validateApiKey(key: string): { valid: boolean; error?: string } {
   if (key.length < 16) {
     return { valid: false, error: "API key must be at least 16 characters long" };
   }
-  if (!/^[a-zA-Z0-9_-]+$/.test(key)) {
-    return { valid: false, error: "API key must only contain letters, numbers, dashes, and underscores" };
+  // Allow: letters, numbers, dashes, underscores, dots, plus, slash, equals (base64/JWT compatible)
+  if (!/^[a-zA-Z0-9_\-\.+/=]+$/.test(key)) {
+    return { valid: false, error: "API key contains invalid characters" };
   }
   return { valid: true };
 }
