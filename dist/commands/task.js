@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { getConfig } from "./config.js";
 import * as fs from "fs";
+import * as readline from "readline";
 export const taskCommand = new Command("task")
     .description("Manage tasks");
 // Helper: Get task ID from --id flag or HUSKY_TASK_ID env var
@@ -20,6 +21,19 @@ function ensureConfig() {
         process.exit(1);
     }
     return config;
+}
+// Helper: Prompt for confirmation
+async function confirm(message) {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+    return new Promise((resolve) => {
+        rl.question(`${message} (y/N): `, (answer) => {
+            rl.close();
+            resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+        });
+    });
 }
 // husky task list
 taskCommand
@@ -149,6 +163,132 @@ taskCommand
     }
     catch (error) {
         console.error("Error creating task:", error);
+        process.exit(1);
+    }
+});
+// husky task update <id>
+taskCommand
+    .command("update <id>")
+    .description("Update task properties")
+    .option("-t, --title <title>", "New title")
+    .option("-d, --description <desc>", "New description")
+    .option("--status <status>", "New status (backlog, in_progress, review, done)")
+    .option("--priority <priority>", "New priority (low, medium, high, urgent)")
+    .option("--assignee <assignee>", "New assignee (human, llm, unassigned)")
+    .option("--project <projectId>", "Link to project")
+    .option("--json", "Output as JSON")
+    .action(async (id, options) => {
+    const config = ensureConfig();
+    // Build update payload with only changed fields
+    const updates = {};
+    if (options.title)
+        updates.title = options.title;
+    if (options.description)
+        updates.description = options.description;
+    if (options.status)
+        updates.status = options.status;
+    if (options.priority)
+        updates.priority = options.priority;
+    if (options.assignee)
+        updates.assignee = options.assignee;
+    if (options.project)
+        updates.projectId = options.project;
+    if (Object.keys(updates).length === 0) {
+        console.error("Error: No update options provided. Use --help for available options.");
+        process.exit(1);
+    }
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${id}`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify(updates),
+        });
+        if (!res.ok) {
+            if (res.status === 404) {
+                console.error(`Error: Task ${id} not found`);
+            }
+            else {
+                console.error(`Error: API returned ${res.status}`);
+            }
+            process.exit(1);
+        }
+        const task = await res.json();
+        if (options.json) {
+            console.log(JSON.stringify(task, null, 2));
+        }
+        else {
+            console.log(`✓ Updated: ${task.title}`);
+            const changedFields = Object.keys(updates).join(", ");
+            console.log(`  Changed: ${changedFields}`);
+        }
+    }
+    catch (error) {
+        console.error("Error updating task:", error);
+        process.exit(1);
+    }
+});
+// husky task delete <id>
+taskCommand
+    .command("delete <id>")
+    .description("Delete a task")
+    .option("--force", "Skip confirmation prompt")
+    .option("--json", "Output as JSON")
+    .action(async (id, options) => {
+    const config = ensureConfig();
+    // Confirm deletion unless --force is provided
+    if (!options.force) {
+        // First fetch task details to show what will be deleted
+        try {
+            const getRes = await fetch(`${config.apiUrl}/api/tasks/${id}`, {
+                headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+            });
+            if (!getRes.ok) {
+                if (getRes.status === 404) {
+                    console.error(`Error: Task ${id} not found`);
+                }
+                else {
+                    console.error(`Error: API returned ${getRes.status}`);
+                }
+                process.exit(1);
+            }
+            const task = await getRes.json();
+            const confirmed = await confirm(`Delete task "${task.title}" (${id})?`);
+            if (!confirmed) {
+                console.log("Deletion cancelled.");
+                process.exit(0);
+            }
+        }
+        catch (error) {
+            console.error("Error fetching task:", error);
+            process.exit(1);
+        }
+    }
+    try {
+        const res = await fetch(`${config.apiUrl}/api/tasks/${id}`, {
+            method: "DELETE",
+            headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        });
+        if (!res.ok) {
+            if (res.status === 404) {
+                console.error(`Error: Task ${id} not found`);
+            }
+            else {
+                console.error(`Error: API returned ${res.status}`);
+            }
+            process.exit(1);
+        }
+        if (options.json) {
+            console.log(JSON.stringify({ deleted: true, id }, null, 2));
+        }
+        else {
+            console.log(`✓ Deleted task ${id}`);
+        }
+    }
+    catch (error) {
+        console.error("Error deleting task:", error);
         process.exit(1);
     }
 });
@@ -601,6 +741,109 @@ taskCommand
         process.exit(1);
     }
 });
+// ============================================
+// MERGE CONFLICT RESOLUTION
+// ============================================
+// husky task merge-conflict --file <path> --ours <content> --theirs <content> [--base <content>] [--context <text>]
+taskCommand
+    .command("merge-conflict")
+    .description("Resolve a Git merge conflict using AI")
+    .requiredOption("--file <path>", "Path to the conflicted file")
+    .requiredOption("--ours <content>", "Content from current branch (ours)")
+    .requiredOption("--theirs <content>", "Content from incoming branch (theirs)")
+    .option("--base <content>", "Content from common ancestor (for 3-way merge)")
+    .option("--context <text>", "Additional context about the merge")
+    .option("--json", "Output as JSON")
+    .option("--ours-file <path>", "Read ours content from file")
+    .option("--theirs-file <path>", "Read theirs content from file")
+    .option("--base-file <path>", "Read base content from file")
+    .action(async (options) => {
+    const config = ensureConfig();
+    // Read content from files if specified
+    let oursContent = options.ours;
+    let theirsContent = options.theirs;
+    let baseContent = options.base;
+    if (options.oursFile) {
+        try {
+            oursContent = fs.readFileSync(options.oursFile, "utf-8");
+        }
+        catch (error) {
+            console.error(`Error reading ours file ${options.oursFile}:`, error);
+            process.exit(1);
+        }
+    }
+    if (options.theirsFile) {
+        try {
+            theirsContent = fs.readFileSync(options.theirsFile, "utf-8");
+        }
+        catch (error) {
+            console.error(`Error reading theirs file ${options.theirsFile}:`, error);
+            process.exit(1);
+        }
+    }
+    if (options.baseFile) {
+        try {
+            baseContent = fs.readFileSync(options.baseFile, "utf-8");
+        }
+        catch (error) {
+            console.error(`Error reading base file ${options.baseFile}:`, error);
+            process.exit(1);
+        }
+    }
+    try {
+        const res = await fetch(`${config.apiUrl}/api/merge-conflict/resolve`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+                filePath: options.file,
+                oursContent,
+                theirsContent,
+                baseContent,
+                context: options.context,
+            }),
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({ error: `API error: ${res.status}` }));
+            throw new Error(errorData.error || `API error: ${res.status}`);
+        }
+        const result = await res.json();
+        if (options.json) {
+            console.log(JSON.stringify(result, null, 2));
+        }
+        else {
+            console.log(`\n  Merge Conflict Resolution: ${options.file}`);
+            console.log("  " + "=".repeat(50));
+            console.log(`\n  Confidence: ${result.confidence}%`);
+            // Confidence indicator
+            if (result.confidence >= 90) {
+                console.log("  Status:     High confidence - safe to use");
+            }
+            else if (result.confidence >= 70) {
+                console.log("  Status:     Good confidence - review recommended");
+            }
+            else if (result.confidence >= 50) {
+                console.log("  Status:     Medium confidence - careful review needed");
+            }
+            else {
+                console.log("  Status:     Low confidence - manual resolution recommended");
+            }
+            console.log(`\n  Explanation:`);
+            console.log(`  ${result.explanation}`);
+            console.log("\n  " + "-".repeat(50));
+            console.log("  Resolved Content:");
+            console.log("  " + "-".repeat(50));
+            console.log(result.resolvedContent);
+            console.log("");
+        }
+    }
+    catch (error) {
+        console.error("Error resolving merge conflict:", error);
+        process.exit(1);
+    }
+});
 function printTasks(tasks) {
     const byStatus = {
         backlog: [],
@@ -628,7 +871,7 @@ function printTasks(tasks) {
         for (const task of statusTasks) {
             const agentStr = task.agent ? ` (${task.agent})` : "";
             const doneStr = status === "done" ? " ✓" : "";
-            console.log(`  #${task.id.slice(0, 6)}  ${task.title.padEnd(30)}  ${task.priority}${agentStr}${doneStr}`);
+            console.log(`  ${task.id}  ${task.title.slice(0, 30).padEnd(30)}  ${task.priority}${agentStr}${doneStr}`);
         }
     }
     console.log("");

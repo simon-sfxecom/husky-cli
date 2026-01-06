@@ -1,6 +1,6 @@
 {
-  "name": "@huskyv0/cli",
-  "version": "0.3.0",
+  "name": "@simonfestl/husky-cli",
+  "version": "0.5.0",
   "description": "CLI for Huskyv0 Task Orchestration with Claude Agent SDK",
   "type": "module",
   "bin": {
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.0",
+    "@inquirer/prompts": "^8.1.0",
     "commander": "^12.1.0"
   },
   "devDependencies": {
@@ -25,6 +26,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/simon-sfxecom/husky-cli.git"
+    "url": "https://github.com/simon-sfxecom/huskyv0.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/simon-sfxecom/huskyv0/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/simon-sfxecom/huskyv0/issues"
   }
 }

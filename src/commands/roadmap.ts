@@ -288,6 +288,75 @@ roadmapCommand
     }
   });
 
+// husky roadmap update <id>
+roadmapCommand
+  .command("update <id>")
+  .description("Update a roadmap")
+  .option("-n, --name <name>", "New name")
+  .option("-d, --description <desc>", "New description")
+  .option("--type <type>", "New type (project, global)")
+  .option("--status <status>", "New status")
+  .option("--json", "Output as JSON")
+  .action(async (id, options) => {
+    const config = ensureConfig();
+
+    // Build update payload
+    const updateData: Record<string, string> = {};
+    if (options.name) updateData.name = options.name;
+    if (options.description) updateData.vision = options.description;
+    if (options.type) {
+      const validTypes = ["project", "global"];
+      if (!validTypes.includes(options.type)) {
+        console.error(`Error: Invalid type "${options.type}". Must be one of: ${validTypes.join(", ")}`);
+        process.exit(1);
+      }
+      updateData.type = options.type;
+    }
+    if (options.status) updateData.status = options.status;
+
+    if (Object.keys(updateData).length === 0) {
+      console.error("Error: No update options provided. Use -n/--name, -d/--description, --type, or --status");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/roadmaps/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error(`Error: Roadmap ${id} not found`);
+        } else {
+          const errorBody = await res.json().catch(() => ({}));
+          console.error(`Error: API returned ${res.status}`, errorBody.error || "");
+        }
+        process.exit(1);
+      }
+
+      const roadmap: Roadmap = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(roadmap, null, 2));
+      } else {
+        console.log(`✓ Roadmap updated successfully`);
+        console.log(`  Name: ${roadmap.name}`);
+        console.log(`  Type: ${roadmap.type}`);
+        if (roadmap.vision) {
+          console.log(`  Vision: ${roadmap.vision}`);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating roadmap:", error);
+      process.exit(1);
+    }
+  });
+
 // husky roadmap delete <id>
 roadmapCommand
   .command("delete <id>")
@@ -315,6 +384,235 @@ roadmapCommand
       console.log(`✓ Roadmap deleted`);
     } catch (error) {
       console.error("Error deleting roadmap:", error);
+      process.exit(1);
+    }
+  });
+
+// husky roadmap list-features <roadmapId>
+roadmapCommand
+  .command("list-features <roadmapId>")
+  .description("List all features in a roadmap with their IDs and status")
+  .option("--json", "Output as JSON")
+  .option("--status <status>", "Filter by status (idea, planned, in_progress, done)")
+  .option("--priority <priority>", "Filter by priority (must, should, could, wont)")
+  .action(async (roadmapId, options) => {
+    const config = ensureConfig();
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/roadmaps/${roadmapId}`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error(`Error: Roadmap ${roadmapId} not found`);
+        } else {
+          console.error(`Error: API returned ${res.status}`);
+        }
+        process.exit(1);
+      }
+
+      const roadmap: Roadmap = await res.json();
+      let features = roadmap.features || [];
+
+      // Apply filters
+      if (options.status) {
+        features = features.filter((f) => f.status === options.status);
+      }
+      if (options.priority) {
+        features = features.filter((f) => f.priority === options.priority);
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify(features, null, 2));
+      } else {
+        printFeaturesList(roadmap.name, features, roadmap.phases || []);
+      }
+    } catch (error) {
+      console.error("Error fetching roadmap features:", error);
+      process.exit(1);
+    }
+  });
+
+// husky roadmap update-feature <roadmapId> <featureId>
+roadmapCommand
+  .command("update-feature <roadmapId> <featureId>")
+  .description("Update a roadmap feature")
+  .option("--status <status>", "New status (idea, planned, in_progress, done)")
+  .option("--name <name>", "New feature name/title")
+  .option("--priority <priority>", "New priority (must, should, could, wont)")
+  .option("--description <description>", "New description")
+  .option("--phase <phaseId>", "Move to different phase")
+  .action(async (roadmapId, featureId, options) => {
+    const config = ensureConfig();
+
+    // Build update payload
+    const updateData: Record<string, string> = {};
+    if (options.status) {
+      const validStatuses = ["idea", "planned", "in_progress", "done"];
+      if (!validStatuses.includes(options.status)) {
+        console.error(`Error: Invalid status "${options.status}". Must be one of: ${validStatuses.join(", ")}`);
+        process.exit(1);
+      }
+      updateData.status = options.status;
+    }
+    if (options.name) {
+      updateData.title = options.name;
+    }
+    if (options.priority) {
+      const validPriorities = ["must", "should", "could", "wont"];
+      if (!validPriorities.includes(options.priority)) {
+        console.error(`Error: Invalid priority "${options.priority}". Must be one of: ${validPriorities.join(", ")}`);
+        process.exit(1);
+      }
+      updateData.priority = options.priority;
+    }
+    if (options.description) {
+      updateData.description = options.description;
+    }
+    if (options.phase) {
+      updateData.phaseId = options.phase;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      console.error("Error: No update options provided. Use --status, --name, --priority, --description, or --phase");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/roadmaps/${roadmapId}/features/${featureId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error(`Error: Roadmap or feature not found`);
+        } else {
+          const errorBody = await res.json().catch(() => ({}));
+          console.error(`Error: API returned ${res.status}`, errorBody.error || "");
+        }
+        process.exit(1);
+      }
+
+      const roadmap: Roadmap = await res.json();
+      const updatedFeature = roadmap.features.find((f) => f.id === featureId);
+
+      console.log(`✓ Feature updated successfully`);
+      if (updatedFeature) {
+        console.log(`  Title:    ${updatedFeature.title}`);
+        console.log(`  Status:   ${updatedFeature.status}`);
+        console.log(`  Priority: ${updatedFeature.priority}`);
+      }
+    } catch (error) {
+      console.error("Error updating feature:", error);
+      process.exit(1);
+    }
+  });
+
+// husky roadmap delete-feature <roadmapId> <featureId>
+roadmapCommand
+  .command("delete-feature <roadmapId> <featureId>")
+  .description("Delete a feature from a roadmap")
+  .option("--force", "Skip confirmation")
+  .action(async (roadmapId, featureId, options) => {
+    const config = ensureConfig();
+
+    if (!options.force) {
+      console.log("Warning: This will permanently delete the feature.");
+      console.log("Use --force to confirm deletion.");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/roadmaps/${roadmapId}/features/${featureId}`, {
+        method: "DELETE",
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error(`Error: Roadmap or feature not found`);
+        } else {
+          const errorBody = await res.json().catch(() => ({}));
+          console.error(`Error: API returned ${res.status}`, errorBody.error || "");
+        }
+        process.exit(1);
+      }
+
+      console.log(`✓ Feature deleted`);
+    } catch (error) {
+      console.error("Error deleting feature:", error);
+      process.exit(1);
+    }
+  });
+
+// husky roadmap convert-feature <roadmapId> <featureId>
+roadmapCommand
+  .command("convert-feature <roadmapId> <featureId>")
+  .description("Convert a roadmap feature to a task")
+  .option("--priority <priority>", "Task priority (low, medium, high)")
+  .option("--assignee <assignee>", "Task assignee (human, llm, unassigned)")
+  .option("--json", "Output as JSON")
+  .action(async (roadmapId, featureId, options) => {
+    const config = ensureConfig();
+
+    try {
+      // Build optional body
+      const body: Record<string, string> = {};
+      if (options.priority) {
+        const validPriorities = ["low", "medium", "high"];
+        if (!validPriorities.includes(options.priority)) {
+          console.error(`Error: Invalid priority "${options.priority}". Must be one of: ${validPriorities.join(", ")}`);
+          process.exit(1);
+        }
+        body.priority = options.priority;
+      }
+      if (options.assignee) {
+        const validAssignees = ["human", "llm", "unassigned"];
+        if (!validAssignees.includes(options.assignee)) {
+          console.error(`Error: Invalid assignee "${options.assignee}". Must be one of: ${validAssignees.join(", ")}`);
+          process.exit(1);
+        }
+        body.assignee = options.assignee;
+      }
+
+      const res = await fetch(`${config.apiUrl}/api/roadmaps/${roadmapId}/features/${featureId}/convert`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error(`Error: Roadmap or feature not found`);
+        } else {
+          const errorBody = await res.json().catch(() => ({}));
+          console.error(`Error: API returned ${res.status}`, errorBody.error || "");
+        }
+        process.exit(1);
+      }
+
+      const result = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`✓ Feature converted to task successfully`);
+        console.log(`  Task ID:   ${result.task.id}`);
+        console.log(`  Title:     ${result.task.title}`);
+        console.log(`  Priority:  ${result.task.priority}`);
+        console.log(`  Status:    ${result.task.status}`);
+      }
+    } catch (error) {
+      console.error("Error converting feature to task:", error);
       process.exit(1);
     }
   });
@@ -391,5 +689,53 @@ function printRoadmapDetail(roadmap: Roadmap) {
   console.log(`    Must Have: ${mustCount}`);
   console.log(`    Should Have: ${shouldCount}`);
   console.log(`    Could Have: ${couldCount}`);
+  console.log("");
+}
+
+function printFeaturesList(roadmapName: string, features: Feature[], phases: Phase[]) {
+  if (features.length === 0) {
+    console.log("\n  No features found.");
+    console.log("  Add one with: husky roadmap add-feature <roadmapId> <phaseId> <title>\n");
+    return;
+  }
+
+  console.log(`\n  FEATURES - ${roadmapName}`);
+  console.log("  " + "─".repeat(80));
+  console.log(
+    `  ${"ID".padEnd(24)} ${"TITLE".padEnd(30)} ${"STATUS".padEnd(12)} ${"PRIORITY".padEnd(8)} PHASE`
+  );
+  console.log("  " + "─".repeat(80));
+
+  // Create phase lookup map
+  const phaseMap = new Map(phases.map((p) => [p.id, p.name]));
+
+  for (const feature of features) {
+    const statusIcon =
+      feature.status === "done"
+        ? "✓"
+        : feature.status === "in_progress"
+        ? "▶"
+        : feature.status === "planned"
+        ? "○"
+        : "·";
+    const phaseName = phaseMap.get(feature.phaseId) || feature.phaseId;
+    const truncatedTitle =
+      feature.title.length > 28 ? feature.title.substring(0, 25) + "..." : feature.title;
+    const truncatedPhase = phaseName.length > 15 ? phaseName.substring(0, 12) + "..." : phaseName;
+
+    console.log(
+      `  ${feature.id.padEnd(24)} ${truncatedTitle.padEnd(30)} ${statusIcon} ${feature.status.padEnd(10)} ${feature.priority.padEnd(8)} ${truncatedPhase}`
+    );
+  }
+
+  // Summary by status
+  const ideaCount = features.filter((f) => f.status === "idea").length;
+  const plannedCount = features.filter((f) => f.status === "planned").length;
+  const inProgressCount = features.filter((f) => f.status === "in_progress").length;
+  const doneCount = features.filter((f) => f.status === "done").length;
+
+  console.log("  " + "─".repeat(80));
+  console.log(`\n  Summary: ${features.length} total`);
+  console.log(`    · Idea: ${ideaCount}  ○ Planned: ${plannedCount}  ▶ In Progress: ${inProgressCount}  ✓ Done: ${doneCount}`);
   console.log("");
 }

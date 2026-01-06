@@ -11,6 +11,30 @@ interface Config {
   apiKey?: string;
 }
 
+// API Key validation - must be at least 16 characters and alphanumeric with dashes/underscores
+function validateApiKey(key: string): { valid: boolean; error?: string } {
+  if (key.length < 16) {
+    return { valid: false, error: "API key must be at least 16 characters long" };
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(key)) {
+    return { valid: false, error: "API key must only contain letters, numbers, dashes, and underscores" };
+  }
+  return { valid: true };
+}
+
+// URL validation
+function validateApiUrl(url: string): { valid: boolean; error?: string } {
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return { valid: false, error: "API URL must use http or https protocol" };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, error: "Invalid URL format" };
+  }
+}
+
 export function getConfig(): Config {
   try {
     if (!existsSync(CONFIG_FILE)) {
@@ -41,8 +65,18 @@ configCommand
     const config = getConfig();
 
     if (key === "api-url") {
+      const validation = validateApiUrl(value);
+      if (!validation.valid) {
+        console.error(`Error: ${validation.error}`);
+        process.exit(1);
+      }
       config.apiUrl = value;
     } else if (key === "api-key") {
+      const validation = validateApiKey(value);
+      if (!validation.valid) {
+        console.error(`Error: ${validation.error}`);
+        process.exit(1);
+      }
       config.apiKey = value;
     } else {
       console.error(`Unknown config key: ${key}`);
@@ -51,7 +85,7 @@ configCommand
     }
 
     saveConfig(config);
-    console.log(`✓ Set ${key} = ${key === "api-key" ? "***" : value}`);
+    console.log(`Set ${key} = ${key === "api-key" ? "***" : value}`);
   });
 
 // husky config get <key>
@@ -80,4 +114,64 @@ configCommand
     console.log("Configuration:");
     console.log(`  api-url: ${config.apiUrl || "(not set)"}`);
     console.log(`  api-key: ${config.apiKey ? "***" : "(not set)"}`);
+  });
+
+// husky config test
+configCommand
+  .command("test")
+  .description("Test API connection with configured credentials")
+  .action(async () => {
+    const config = getConfig();
+
+    // Check if configuration is complete
+    if (!config.apiUrl) {
+      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+      process.exit(1);
+    }
+    if (!config.apiKey) {
+      console.error("Error: API key not configured. Run: husky config set api-key <key>");
+      process.exit(1);
+    }
+
+    console.log("Testing API connection...");
+
+    try {
+      const url = new URL("/api/tasks", config.apiUrl);
+      const res = await fetch(url.toString(), {
+        headers: {
+          "x-api-key": config.apiKey,
+        },
+      });
+
+      if (res.ok) {
+        console.log(`API connection successful (API URL: ${config.apiUrl})`);
+      } else if (res.status === 401) {
+        console.error(`API connection failed: Unauthorized (HTTP 401)`);
+        console.error("  Check your API key with: husky config set api-key <key>");
+        process.exit(1);
+      } else if (res.status === 403) {
+        console.error(`API connection failed: Forbidden (HTTP 403)`);
+        console.error("  Your API key may not have the required permissions");
+        process.exit(1);
+      } else {
+        console.error(`API connection failed: HTTP ${res.status}`);
+        try {
+          const body = await res.json();
+          if (body.error) {
+            console.error(`  Error: ${body.error}`);
+          }
+        } catch {
+          // Ignore JSON parse errors
+        }
+        process.exit(1);
+      }
+    } catch (error) {
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        console.error(`API connection failed: Could not connect to ${config.apiUrl}`);
+        console.error("  Check your API URL with: husky config set api-url <url>");
+      } else {
+        console.error(`API connection failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+      process.exit(1);
+    }
   });
