@@ -251,39 +251,39 @@ npm link
 
 ## Publishing / Release
 
-Die CLI wird automatisch via GitHub Actions auf npm veroeffentlicht (OIDC Trusted Publishing).
+The CLI is automatically published to npm via GitHub Actions using OIDC Trusted Publishing.
 
-### Neue Version veroeffentlichen
+### Publishing a New Version
 
-1. **Version in `package.json` aktualisieren:**
+1. **Update version in `package.json`:**
    ```bash
    cd packages/cli
-   npm version patch  # oder minor/major
+   npm version patch  # or minor/major
    ```
 
-2. **Commit und Push:**
+2. **Commit and push:**
    ```bash
    git add .
    git commit -m "chore(cli): bump version to x.x.x"
    git push origin main
    ```
 
-3. **Automatische Veroeffentlichung:**
-   - Der Workflow `.github/workflows/publish-cli.yml` wird bei Aenderungen in `packages/cli/**` getriggert
-   - Package wird mit npm provenance auf npm veroeffentlicht
-   - Kein `NPM_TOKEN` Secret noetig (OIDC Trusted Publishing)
+3. **Automatic publishing:**
+   - Changes in `packages/cli/**` trigger sync to `simon-sfxecom/husky-cli` (public repo)
+   - Public repo publishes to npm with OIDC provenance
+   - No `NPM_TOKEN` secret required (OIDC Trusted Publishing)
 
-### Manueller Trigger
+### Manual Trigger
 
-Falls noetig, kann der Workflow auch manuell ausgeloest werden:
-- GitHub > Actions > "Publish CLI to npm" > "Run workflow"
+If needed, the workflow can be triggered manually:
+- GitHub > Actions > "Sync CLI to Public Repo" > "Run workflow"
 
 ### npm Trusted Publishing Setup
 
-Das Package nutzt OIDC-basiertes Publishing. Konfiguration auf npmjs.com:
+The package uses OIDC-based publishing. Configuration on npmjs.com:
 - Package Settings > Publishing access > Configure trusted publishing
-- Repository: `simon-sfxecom/huskyv0`
-- Workflow: `publish-cli.yml`
+- Repository: `simon-sfxecom/husky-cli`
+- Workflow: `publish.yml`
 
 ## Changelog
 
