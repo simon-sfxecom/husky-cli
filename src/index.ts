@@ -25,7 +25,7 @@ const program = new Command();
 program
   .name("husky")
   .description("CLI for Huskyv0 Task Orchestration with Claude Agent")
-  .version("0.5.1");
+  .version("0.5.2");
 
 program.addCommand(taskCommand);
 program.addCommand(configCommand);
