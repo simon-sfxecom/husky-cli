@@ -54,6 +54,13 @@ function saveConfig(config: Config): void {
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
+// Helper to set a single config value (used by interactive mode)
+export function setConfig(key: "apiUrl" | "apiKey", value: string): void {
+  const config = getConfig();
+  config[key] = value;
+  saveConfig(config);
+}
+
 export const configCommand = new Command("config")
   .description("Manage CLI configuration");
 

@@ -31,10 +31,18 @@ function clearScreen() {
 
 // Print header
 function printHeader() {
+  const config = getConfig();
   console.log("\n");
-  console.log("  +-------------------------------------+");
-  console.log("  |   Husky CLI - Interactive Mode      |");
-  console.log("  +-------------------------------------+");
+  console.log("  🐕 Husky CLI - Interactive Mode");
+  console.log("  " + "─".repeat(35));
+
+  if (!config.apiUrl) {
+    console.log("");
+    console.log("  ⚠️  Getting Started:");
+    console.log("  Go to 'CLI Config' to set up your API URL and Key");
+  } else {
+    console.log(`  Connected to: ${config.apiUrl.substring(0, 40)}`);
+  }
   console.log("");
 }
 
@@ -58,7 +66,8 @@ export async function runInteractiveMode(): Promise<void> {
       { name: "VM Sessions", value: "vm", description: "Manage VM sessions" },
       { name: "Jules Sessions", value: "jules", description: "Manage Jules AI sessions" },
       { name: "Business Strategy", value: "strategy", description: "Manage business strategy" },
-      { name: "Settings", value: "settings", description: "Manage settings" },
+      { name: "Dashboard Settings", value: "settings", description: "Manage dashboard settings" },
+      { name: "CLI Config", value: "config", description: "Configure CLI (API URL, API Key)" },
       { name: "---", value: "separator", description: "" },
       { name: "Exit", value: "exit", description: "Exit interactive mode" },
     ];
@@ -96,6 +105,9 @@ export async function runInteractiveMode(): Promise<void> {
           break;
         case "settings":
           await settingsMenu();
+          break;
+        case "config":
+          await cliConfigMenu();
           break;
         case "exit":
           running = false;
@@ -1529,6 +1541,118 @@ async function updateSetting(config: ValidConfig): Promise<void> {
     console.error("\n  Error updating setting:", error);
     await pressEnterToContinue();
   }
+}
+
+// ============================================
+// CLI CONFIG MENU
+// ============================================
+
+async function cliConfigMenu(): Promise<void> {
+  const menuItems: MenuItem[] = [
+    { name: "Show current config", value: "show" },
+    { name: "Set API URL", value: "api-url" },
+    { name: "Set API Key", value: "api-key" },
+    { name: "Test connection", value: "test" },
+    { name: "Back to main menu", value: "back" },
+  ];
+
+  const choice = await select({
+    message: "CLI Config:",
+    choices: menuItems,
+  });
+
+  switch (choice) {
+    case "show":
+      await showCliConfig();
+      break;
+    case "api-url":
+      await setApiUrl();
+      break;
+    case "api-key":
+      await setApiKey();
+      break;
+    case "test":
+      await testConnection();
+      break;
+    case "back":
+      return;
+  }
+}
+
+async function showCliConfig(): Promise<void> {
+  const config = getConfig();
+
+  console.log("\n  CLI CONFIGURATION (local)");
+  console.log("  " + "-".repeat(50));
+  console.log(`  API URL:  ${config.apiUrl || "(not set)"}`);
+  console.log(`  API Key:  ${config.apiKey ? config.apiKey.substring(0, 8) + "..." : "(not set)"}`);
+  console.log("");
+
+  await pressEnterToContinue();
+}
+
+async function setApiUrl(): Promise<void> {
+  const { setConfig } = await import("./config.js");
+
+  const url = await input({
+    message: "API URL (e.g., https://your-dashboard.run.app):",
+    validate: (value) => {
+      if (!value) return "URL is required";
+      if (!value.startsWith("http")) return "URL must start with http:// or https://";
+      return true;
+    },
+  });
+
+  setConfig("apiUrl", url);
+  console.log("\n  ✅ API URL saved!\n");
+  await pressEnterToContinue();
+}
+
+async function setApiKey(): Promise<void> {
+  const { setConfig } = await import("./config.js");
+
+  const key = await input({
+    message: "API Key:",
+    validate: (value) => (value.length > 0 ? true : "API Key is required"),
+  });
+
+  setConfig("apiKey", key);
+  console.log("\n  ✅ API Key saved!\n");
+  await pressEnterToContinue();
+}
+
+async function testConnection(): Promise<void> {
+  const config = getConfig();
+
+  if (!config.apiUrl) {
+    console.log("\n  ❌ API URL not configured. Set it first.\n");
+    await pressEnterToContinue();
+    return;
+  }
+
+  console.log("\n  Testing connection...\n");
+
+  try {
+    const res = await fetch(`${config.apiUrl}/api/tasks`, {
+      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    });
+
+    if (res.ok) {
+      console.log("  ✅ Connection successful!");
+      console.log(`  Status: ${res.status}`);
+    } else if (res.status === 401) {
+      console.log("  ⚠️  Connection works but authentication failed.");
+      console.log("  Check your API Key.");
+    } else {
+      console.log(`  ❌ Connection failed with status: ${res.status}`);
+    }
+  } catch (error) {
+    console.log("  ❌ Connection failed!");
+    console.log(`  Error: ${(error as Error).message}`);
+  }
+
+  console.log("");
+  await pressEnterToContinue();
 }
 
 // ============================================
