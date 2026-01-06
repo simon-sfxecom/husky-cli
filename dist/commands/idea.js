@@ -293,10 +293,12 @@ function printIdeas(ideas) {
     console.log(`  ${"ID".padEnd(24)} ${"TITLE".padEnd(30)} ${"STATUS".padEnd(12)} CATEGORY`);
     console.log("  " + "─".repeat(70));
     for (const idea of ideas) {
-        const statusIcon = getStatusIcon(idea.status);
-        const truncatedTitle = idea.title.length > 28 ? idea.title.substring(0, 25) + "..." : idea.title;
+        const statusIcon = getStatusIcon(idea.status || "draft");
+        const title = idea.title || "(untitled)";
+        const truncatedTitle = title.length > 28 ? title.substring(0, 25) + "..." : title;
         const category = idea.category || "-";
-        console.log(`  ${idea.id.padEnd(24)} ${truncatedTitle.padEnd(30)} ${statusIcon} ${idea.status.padEnd(10)} ${category}`);
+        const status = idea.status || "draft";
+        console.log(`  ${idea.id.padEnd(24)} ${truncatedTitle.padEnd(30)} ${statusIcon} ${status.padEnd(10)} ${category}`);
     }
     // Summary by status
     const draftCount = ideas.filter((i) => i.status === "draft").length;
@@ -309,10 +311,10 @@ function printIdeas(ideas) {
     console.log("");
 }
 function printIdeaDetail(idea) {
-    console.log(`\n  Idea: ${idea.title}`);
+    console.log(`\n  Idea: ${idea.title || "(untitled)"}`);
     console.log("  " + "─".repeat(50));
     console.log(`  ID:         ${idea.id}`);
-    console.log(`  Status:     ${idea.status}`);
+    console.log(`  Status:     ${idea.status || "draft"}`);
     if (idea.category) {
         console.log(`  Category:   ${idea.category}`);
     }
@@ -320,8 +322,8 @@ function printIdeaDetail(idea) {
         console.log(`  Description:`);
         console.log(`    ${idea.description}`);
     }
-    console.log(`  Created:    ${new Date(idea.createdAt).toLocaleString()}`);
-    console.log(`  Updated:    ${new Date(idea.updatedAt).toLocaleString()}`);
+    console.log(`  Created:    ${idea.createdAt ? new Date(idea.createdAt).toLocaleString() : "-"}`);
+    console.log(`  Updated:    ${idea.updatedAt ? new Date(idea.updatedAt).toLocaleString() : "-"}`);
     console.log("");
 }
 function getStatusIcon(status) {
