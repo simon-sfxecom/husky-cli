@@ -41,8 +41,6 @@ jobs:
             echo "Version $PACKAGE_VERSION already published"
           fi
 
-      - name: Publish to npm with provenance
+      - name: Publish to npm with OIDC
         if: steps.version.outputs.should_publish == 'true'
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
