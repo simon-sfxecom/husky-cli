@@ -1,16 +1,20 @@
 name: Publish to npm
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [created]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (leave empty to use package.json version)'
+        required: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Required for npm OIDC/provenance
+      id-token: write  # Required for npm provenance
 
     steps:
       - name: Checkout
@@ -19,30 +23,16 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build
         run: npm run build
 
-      - name: Check if version changed
-        id: version
-        run: |
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          NPM_VERSION=$(npm view @simonfestl/husky-cli version 2>/dev/null || echo "0.0.0")
-          if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
-            echo "should_publish=true" >> $GITHUB_OUTPUT
-            echo "New version $PACKAGE_VERSION (npm has $NPM_VERSION)"
-          else
-            echo "should_publish=false" >> $GITHUB_OUTPUT
-            echo "Version $PACKAGE_VERSION already published"
-          fi
-
-      - name: Publish to npm with OIDC provenance
-        if: steps.version.outputs.should_publish == 'true'
+      - name: Publish to npm
         run: npm publish --provenance --access public
-        # No NPM_TOKEN needed - uses OIDC Trusted Publishing
-        # Setup required: npmjs.com → Package Settings → Add Trusted Publisher
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
