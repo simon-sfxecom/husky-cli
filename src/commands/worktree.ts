@@ -177,10 +177,11 @@ worktreeCommand
     }
   });
 
-// husky worktree remove <session-name>
+// husky worktree remove <session-name> (alias: delete)
 worktreeCommand
   .command("remove <session-name>")
-  .description("Remove a worktree")
+  .alias("delete")
+  .description("Remove a worktree (alias: delete)")
   .option("-p, --project <path>", "Project directory (default: current directory)")
   .option("--delete-branch", "Also delete the associated branch")
   .option("--force", "Force removal even with uncommitted changes")

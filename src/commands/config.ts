@@ -9,6 +9,8 @@ const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 interface Config {
   apiUrl?: string;
   apiKey?: string;
+  workerId?: string;
+  workerName?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -55,8 +57,8 @@ function saveConfig(config: Config): void {
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
-// Helper to set a single config value (used by interactive mode)
-export function setConfig(key: "apiUrl" | "apiKey", value: string): void {
+// Helper to set a single config value (used by interactive mode and worker identity)
+export function setConfig(key: "apiUrl" | "apiKey" | "workerId" | "workerName", value: string): void {
   const config = getConfig();
   config[key] = value;
   saveConfig(config);

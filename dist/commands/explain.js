@@ -1,38 +1,37 @@
 import { Command } from "commander";
-
 export const explainCommand = new Command("explain")
-  .description("Explain CLI commands for AI agents")
-  .argument("[command]", "Command to explain (task, roadmap, changelog, config, agent)")
-  .action((command?: string) => {
+    .description("Explain CLI commands for AI agents")
+    .argument("[command]", "Command to explain (task, roadmap, changelog, config, agent)")
+    .action((command) => {
     if (!command) {
-      printOverview();
-    } else {
-      switch (command.toLowerCase()) {
-        case "task":
-          printTaskHelp();
-          break;
-        case "roadmap":
-          printRoadmapHelp();
-          break;
-        case "changelog":
-          printChangelogHelp();
-          break;
-        case "config":
-          printConfigHelp();
-          break;
-        case "agent":
-          printAgentWorkflowHelp();
-          break;
-        default:
-          console.log(`Unknown command: ${command}`);
-          console.log("Available: task, roadmap, changelog, config, agent");
-          process.exit(1);
-      }
+        printOverview();
     }
-  });
-
+    else {
+        switch (command.toLowerCase()) {
+            case "task":
+                printTaskHelp();
+                break;
+            case "roadmap":
+                printRoadmapHelp();
+                break;
+            case "changelog":
+                printChangelogHelp();
+                break;
+            case "config":
+                printConfigHelp();
+                break;
+            case "agent":
+                printAgentWorkflowHelp();
+                break;
+            default:
+                console.log(`Unknown command: ${command}`);
+                console.log("Available: task, roadmap, changelog, config, agent");
+                process.exit(1);
+        }
+    }
+});
 function printOverview() {
-  console.log(`
+    console.log(`
 HUSKY CLI - AI Task Orchestration
 
 Available Commands:
@@ -55,9 +54,8 @@ Environment Variables:
   HUSKY_TASK_ID    Default task ID for commands (avoids --id flag)
 `);
 }
-
 function printTaskHelp() {
-  console.log(`
+    console.log(`
 HUSKY TASK COMMANDS
 
 Task ID can be passed via --id flag or HUSKY_TASK_ID environment variable.
@@ -193,9 +191,8 @@ MERGE CONFLICT RESOLUTION
     --base-file <path>    Read base content from file
 `);
 }
-
 function printRoadmapHelp() {
-  console.log(`
+    console.log(`
 HUSKY ROADMAP COMMANDS
 
 LIST ROADMAPS
@@ -257,9 +254,8 @@ DELETE ROADMAP
     --force    Skip confirmation (required)
 `);
 }
-
 function printChangelogHelp() {
-  console.log(`
+    console.log(`
 HUSKY CHANGELOG COMMANDS
 
 GENERATE FROM GIT COMMITS
@@ -303,9 +299,8 @@ DELETE CHANGELOG
     -y, --yes    Skip confirmation (required)
 `);
 }
-
 function printConfigHelp() {
-  console.log(`
+    console.log(`
 HUSKY CONFIG COMMANDS
 
 SET CONFIGURATION
@@ -328,9 +323,8 @@ LIST ALL CONFIGURATION
 Configuration is stored in: ~/.husky/config.json
 `);
 }
-
 function printAgentWorkflowHelp() {
-  console.log(`
+    console.log(`
 HUSKY AGENT WORKFLOW
 
 This guide explains how an AI agent should use the Husky CLI to work on tasks.
