@@ -2,6 +2,10 @@ import { Command } from "commander";
 import { getConfig } from "./config.js";
 import * as fs from "fs";
 import * as readline from "readline";
+import { paginateList, printPaginated } from "../lib/pagination.js";
+import { ensureWorkerRegistered, generateSessionId, registerSession, sessionHeartbeat } from "../lib/worker.js";
+import { WorktreeManager } from "../lib/worktree.js";
+import { execSync } from "child_process";
 
 export const taskCommand = new Command("task")
   .description("Manage tasks");
@@ -41,11 +45,92 @@ async function confirm(message: string): Promise<boolean> {
   });
 }
 
+// Helper: Check if current directory is a git repository
+function isGitRepo(): boolean {
+  try {
+    execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Helper: Get current Git remote URL (e.g., "simon-sfxecom/huskyv0")
+function getGitRepoIdentifier(): string | null {
+  if (!isGitRepo()) return null;
+
+  try {
+    const remoteUrl = execSync("git remote get-url origin", { encoding: "utf-8" }).trim();
+    // Extract owner/repo from various URL formats:
+    // https://github.com/owner/repo.git
+    // git@github.com:owner/repo.git
+    const match = remoteUrl.match(/[/:]([\w-]+\/[\w-]+?)(\.git)?$/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+// Helper: Create worktree for task when starting (auto-isolation)
+function createWorktreeForTask(taskId: string): { path: string; branch: string } | null {
+  if (!isGitRepo()) {
+    return null;
+  }
+
+  try {
+    const sessionName = `task-${taskId.slice(0, 8)}`;
+    const manager = new WorktreeManager(process.cwd());
+    const info = manager.createWorktree(sessionName);
+    return { path: info.path, branch: info.branch };
+  } catch (error) {
+    // Worktree creation failed, but don't block task update
+    console.warn("⚠ Could not create worktree:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+// Helper: Find project ID by GitHub repo identifier
+async function findProjectByRepo(apiUrl: string, apiKey: string | undefined, repoIdentifier: string): Promise<{ id: string; name: string } | null> {
+  try {
+    const res = await fetch(`${apiUrl}/api/projects`, {
+      headers: apiKey ? { "x-api-key": apiKey } : {},
+    });
+    if (!res.ok) return null;
+
+    const projects = await res.json();
+    // Extract repo name (e.g., "huskyv0" from "simon-sfxecom/huskyv0")
+    const repoName = repoIdentifier.split("/").pop()?.toLowerCase() || "";
+
+    // Try to match by:
+    // 1. githubRepo field (exact or partial match)
+    // 2. Project name similarity to repo name
+    const project = projects.find((p: { githubRepo?: string; name: string }) => {
+      // Check githubRepo field first
+      if (p.githubRepo?.toLowerCase().includes(repoIdentifier.toLowerCase())) {
+        return true;
+      }
+      // Fallback: Check if project name matches repo name (case-insensitive)
+      const projectNameLower = p.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const repoNameClean = repoName.replace(/[^a-z0-9]/g, "");
+      return projectNameLower === repoNameClean || projectNameLower.includes(repoNameClean) || repoNameClean.includes(projectNameLower);
+    });
+    return project ? { id: project.id, name: project.name } : null;
+  } catch {
+    return null;
+  }
+}
+
 // husky task list
 taskCommand
   .command("list")
   .description("List all tasks")
   .option("-s, --status <status>", "Filter by status")
+  .option("-a, --all", "Show all tasks (ignore current repo filter)")
+  .option("--project <id>", "Filter by project ID")
+  .option("-p, --page <num>", "Page number (starts at 1)", "1")
+  .option("-n, --per-page <num>", "Items per page (default: all)")
+  .option("-i, --interactive", "Interactive pagination with arrow keys")
+  .option("--json", "Output as JSON")
   .action(async (options) => {
     const config = getConfig();
     if (!config.apiUrl) {
@@ -59,6 +144,24 @@ taskCommand
         url.searchParams.set("status", options.status);
       }
 
+      // Auto-detect project from current repo (unless --all or --project specified)
+      let autoDetectedProject: { id: string; name: string } | null = null;
+      let filterProjectId: string | null = null;
+
+      if (!options.all && !options.project) {
+        const repoIdentifier = getGitRepoIdentifier();
+        if (repoIdentifier) {
+          autoDetectedProject = await findProjectByRepo(config.apiUrl, config.apiKey, repoIdentifier);
+          if (autoDetectedProject) {
+            filterProjectId = autoDetectedProject.id;
+          }
+        }
+      } else if (options.project) {
+        filterProjectId = options.project;
+      }
+
+      // Note: We don't pass projectId to API to avoid Firestore index requirement
+      // Instead, we filter client-side which is fine for reasonable task counts
       const res = await fetch(url.toString(), {
         headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
       });
@@ -67,7 +170,71 @@ taskCommand
         throw new Error(`API error: ${res.status}`);
       }
 
-      const tasks = await res.json();
+      let tasks: Task[] = await res.json();
+
+      // Client-side filtering by projectId (avoids Firestore composite index)
+      if (filterProjectId) {
+        tasks = tasks.filter(t => t.projectId === filterProjectId);
+      }
+
+      // Show filter info if auto-detected project
+      if (autoDetectedProject && !options.json) {
+        console.log(`\n  📁 Filtering by project: ${autoDetectedProject.name}`);
+        console.log(`     Use --all to see all tasks\n`);
+      }
+
+      // JSON output
+      if (options.json) {
+        console.log(JSON.stringify(tasks, null, 2));
+        return;
+      }
+
+      // Interactive pagination mode
+      if (options.interactive) {
+        await paginateList({
+          items: tasks,
+          pageSize: 10,
+          title: autoDetectedProject ? `Tasks (${autoDetectedProject.name})` : "Tasks",
+          emptyMessage: "No tasks found.",
+          renderItem: (task) => {
+            const statusIcon = task.status === "done" ? "✓" : task.status === "in_progress" ? "▶" : "○";
+            const priorityIcon = task.priority === "urgent" ? "🔴" : task.priority === "high" ? "🟠" : "";
+            return `  ${statusIcon} ${task.id.padEnd(20)} │ ${task.title.slice(0, 40).padEnd(40)} ${priorityIcon}`;
+          },
+          selectableItems: true,
+          onSelect: async (task) => {
+            console.clear();
+            console.log(`\n  Task: ${task.title}`);
+            console.log("  " + "─".repeat(50));
+            console.log(`  ID:       ${task.id}`);
+            console.log(`  Status:   ${task.status}`);
+            console.log(`  Priority: ${task.priority}`);
+            if (task.agent) console.log(`  Agent:    ${task.agent}`);
+            console.log("");
+          },
+        });
+        return;
+      }
+
+      // Simple pagination mode
+      if (options.perPage) {
+        const pageNum = parseInt(options.page, 10) - 1;
+        const pageSize = parseInt(options.perPage, 10);
+
+        printPaginated(
+          tasks,
+          pageNum,
+          pageSize,
+          (task) => {
+            const statusIcon = task.status === "done" ? "✓" : task.status === "in_progress" ? "▶" : "○";
+            return `  ${statusIcon} ${task.id.padEnd(20)} │ ${task.title}`;
+          },
+          "Tasks"
+        );
+        return;
+      }
+
+      // Default: grouped by status (original behavior)
       printTasks(tasks);
     } catch (error) {
       console.error("Error fetching tasks:", error);
@@ -87,13 +254,22 @@ taskCommand
     }
 
     try {
+      // Ensure worker is registered and create a session
+      const workerId = await ensureWorkerRegistered(config.apiUrl, config.apiKey || "");
+      const sessionId = generateSessionId();
+      await registerSession(config.apiUrl, config.apiKey || "", workerId, sessionId);
+
       const res = await fetch(`${config.apiUrl}/api/tasks/${id}/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
         },
-        body: JSON.stringify({ agent: "claude-code" }),
+        body: JSON.stringify({
+          agent: "claude-code",
+          workerId,
+          sessionId,
+        }),
       });
 
       if (!res.ok) {
@@ -102,6 +278,8 @@ taskCommand
 
       const task = await res.json();
       console.log(`✓ Started: ${task.title}`);
+      console.log(`  Worker: ${workerId}`);
+      console.log(`  Session: ${sessionId}`);
     } catch (error) {
       console.error("Error starting task:", error);
       process.exit(1);
@@ -195,6 +373,7 @@ taskCommand
   .option("--priority <priority>", "New priority (low, medium, high, urgent)")
   .option("--assignee <assignee>", "New assignee (human, llm, unassigned)")
   .option("--project <projectId>", "Link to project")
+  .option("--no-worktree", "Skip automatic worktree creation when starting task")
   .option("--json", "Output as JSON")
   .action(async (id, options) => {
     const config = ensureConfig();
@@ -211,6 +390,16 @@ taskCommand
     if (Object.keys(updates).length === 0) {
       console.error("Error: No update options provided. Use --help for available options.");
       process.exit(1);
+    }
+
+    // Auto-create worktree when starting a task (unless --no-worktree)
+    let worktreeInfo: { path: string; branch: string } | null = null;
+    if (options.status === "in_progress" && options.worktree !== false) {
+      worktreeInfo = createWorktreeForTask(id);
+      if (worktreeInfo) {
+        updates.worktreePath = worktreeInfo.path;
+        updates.worktreeBranch = worktreeInfo.branch;
+      }
     }
 
     try {
@@ -238,8 +427,14 @@ taskCommand
         console.log(JSON.stringify(task, null, 2));
       } else {
         console.log(`✓ Updated: ${task.title}`);
-        const changedFields = Object.keys(updates).join(", ");
+        const changedFields = Object.keys(updates).filter(k => k !== 'worktreePath' && k !== 'worktreeBranch').join(", ");
         console.log(`  Changed: ${changedFields}`);
+
+        // Show worktree info if created
+        if (worktreeInfo) {
+          console.log(`  ⎇ Worktree: ${worktreeInfo.branch}`);
+          console.log(`    cd ${worktreeInfo.path}`);
+        }
       }
     } catch (error) {
       console.error("Error updating task:", error);
@@ -318,6 +513,8 @@ interface Task {
   status: string;
   priority: string;
   agent?: string;
+  projectId?: string;
+  projectName?: string;
 }
 
 // husky task get [--id <id>] [--json]
@@ -394,6 +591,38 @@ taskCommand
       console.log(`✓ Status updated: ${message}`);
     } catch (error) {
       console.error("Error updating status:", error);
+      process.exit(1);
+    }
+  });
+
+// husky task message <id> "message" - post status message to task
+taskCommand
+  .command("message <id> <message>")
+  .description("Post a status message to a task")
+  .action(async (id, message) => {
+    const config = ensureConfig();
+    const taskId = id;
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/status`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          message,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      console.log("✓ Status message posted");
+    } catch (error) {
+      console.error("Error posting message:", error);
       process.exit(1);
     }
   });
@@ -937,13 +1166,17 @@ function printTasks(tasks: Task[]) {
     if (statusTasks.length === 0) continue;
 
     console.log(`\n  ${label}`);
-    console.log("  " + "─".repeat(50));
+    console.log("  " + "─".repeat(95));
+    console.log(`  ${"ID".padEnd(20)}  ${"Title".padEnd(30)}  ${"Project".padEnd(15)}  ${"Project ID".padEnd(12)}  ${"Priority".padEnd(6)}`);
+    console.log("  " + "─".repeat(95));
 
     for (const task of statusTasks) {
       const agentStr = task.agent ? ` (${task.agent})` : "";
       const doneStr = status === "done" ? " ✓" : "";
+      const projectName = task.projectName?.slice(0, 15).padEnd(15) || "—".padEnd(15);
+      const projectId = task.projectId?.slice(0, 12).padEnd(12) || "—".padEnd(12);
       console.log(
-        `  ${task.id}  ${task.title.slice(0, 30).padEnd(30)}  ${task.priority}${agentStr}${doneStr}`
+        `  ${task.id.padEnd(20)}  ${task.title.slice(0, 30).padEnd(30)}  ${projectName}  ${projectId}  ${task.priority.padEnd(6)}${agentStr}${doneStr}`
       );
     }
   }
