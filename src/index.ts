@@ -21,15 +21,17 @@ import { completionCommand } from "./commands/completion.js";
 import { worktreeCommand } from "./commands/worktree.js";
 import { workerCommand } from "./commands/worker.js";
 import { bizCommand } from "./commands/biz.js";
+import { servicesCommand } from "./commands/services.js";
 import { printLLMContext, llmCommand } from "./commands/llm-context.js";
 import { runInteractiveMode } from "./commands/interactive.js";
+import { serviceAccountCommand } from "./commands/service-account.js";
 
 const program = new Command();
 
 program
   .name("husky")
   .description("CLI for Huskyv0 Task Orchestration with Claude Agent")
-  .version("0.9.4")
+  .version("0.9.5")
   .option("--llm", "Output LLM reference documentation (markdown)");
 
 program.addCommand(taskCommand);
@@ -52,6 +54,8 @@ program.addCommand(completionCommand);
 program.addCommand(worktreeCommand);
 program.addCommand(workerCommand);
 program.addCommand(bizCommand);
+program.addCommand(servicesCommand);
+program.addCommand(serviceAccountCommand);
 program.addCommand(llmCommand);
 
 // Handle --llm flag specially

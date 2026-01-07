@@ -2,6 +2,7 @@ import { Command } from "commander";
 import * as path from "path";
 import { WorktreeManager } from "../lib/worktree.js";
 import { MergeLock, withMergeLock } from "../lib/merge-lock.js";
+import { getConfig } from "./config.js";
 export const worktreeCommand = new Command("worktree")
     .description("Manage Git worktrees for isolated agent workspaces");
 /**
@@ -23,13 +24,46 @@ worktreeCommand
     .description("Create a new worktree for a session")
     .option("-b, --base-branch <branch>", "Base branch to create from (default: main/master)")
     .option("-p, --project <path>", "Project directory (default: current directory)")
+    .option("--task-id <id>", "Link worktree to task and register with dashboard API")
     .option("--json", "Output as JSON")
     .action(async (sessionName, options) => {
     try {
         const manager = getManager(options);
         const info = manager.createWorktree(sessionName);
+        // Register with dashboard API if task-id provided
+        if (options.taskId) {
+            const config = getConfig();
+            if (!config.apiUrl) {
+                console.warn("Warning: API URL not configured. Worktree created but not registered.");
+                console.warn("Run: husky config set api-url <url>");
+            }
+            else {
+                try {
+                    const res = await fetch(`${config.apiUrl}/api/tasks/${options.taskId}`, {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+                        },
+                        body: JSON.stringify({
+                            worktreePath: info.path,
+                            worktreeBranch: info.branch,
+                        }),
+                    });
+                    if (!res.ok) {
+                        console.warn(`Warning: Failed to register worktree with task (API ${res.status})`);
+                    }
+                    else if (!options.json) {
+                        console.log(`✓ Registered worktree with task ${options.taskId}`);
+                    }
+                }
+                catch (err) {
+                    console.warn(`Warning: Failed to register worktree: ${err instanceof Error ? err.message : err}`);
+                }
+            }
+        }
         if (options.json) {
-            console.log(JSON.stringify(info, null, 2));
+            console.log(JSON.stringify({ ...info, taskId: options.taskId }, null, 2));
         }
         else {
             console.log(`\nWorktree created successfully!`);
@@ -403,3 +437,449 @@ function printWorktreeStatus(info, changedFiles, hasUncommitted) {
         }
     }
 }
+// ============================================
+// DASHBOARD SYNC COMMANDS
+// ============================================
+// husky worktree sync-stats <session-name> --task-id <id>
+worktreeCommand
+    .command("sync-stats <session-name>")
+    .description("Sync worktree stats to dashboard for a task")
+    .requiredOption("--task-id <id>", "Task ID to update")
+    .option("-p, --project <path>", "Project directory (default: current directory)")
+    .option("--json", "Output as JSON")
+    .action(async (sessionName, options) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+        console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+        process.exit(1);
+    }
+    try {
+        const manager = getManager(options);
+        const info = manager.getWorktree(sessionName);
+        if (!info) {
+            console.error(`Error: No worktree found for session: ${sessionName}`);
+            process.exit(1);
+        }
+        // Prepare stats payload
+        const worktreeStats = {
+            commitCount: info.stats.commitCount,
+            filesChanged: info.stats.filesChanged,
+            additions: info.stats.additions,
+            deletions: info.stats.deletions,
+            lastUpdated: new Date().toISOString(),
+        };
+        // Update task via API
+        const res = await fetch(`${config.apiUrl}/api/tasks/${options.taskId}`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+                worktreePath: info.path,
+                worktreeBranch: info.branch,
+                worktreeStats,
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        if (options.json) {
+            console.log(JSON.stringify({ success: true, taskId: options.taskId, worktreeStats }, null, 2));
+        }
+        else {
+            console.log(`✓ Synced stats for ${sessionName} to task ${options.taskId}`);
+            console.log(`  Commits: ${worktreeStats.commitCount}`);
+            console.log(`  Files:   ${worktreeStats.filesChanged}`);
+            console.log(`  Changes: +${worktreeStats.additions}/-${worktreeStats.deletions}`);
+        }
+    }
+    catch (error) {
+        console.error("Error syncing stats:", error instanceof Error ? error.message : error);
+        process.exit(1);
+    }
+});
+// husky worktree check-conflicts <session-name> --task-id <id>
+worktreeCommand
+    .command("check-conflicts <session-name>")
+    .description("Check for merge conflicts and sync to dashboard")
+    .requiredOption("--task-id <id>", "Task ID to update")
+    .option("-p, --project <path>", "Project directory (default: current directory)")
+    .option("--json", "Output as JSON")
+    .action(async (sessionName, options) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+        console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+        process.exit(1);
+    }
+    try {
+        const manager = getManager(options);
+        const info = manager.getWorktree(sessionName);
+        if (!info) {
+            console.error(`Error: No worktree found for session: ${sessionName}`);
+            process.exit(1);
+        }
+        // Check for conflicts
+        const conflictResult = manager.checkMergeConflicts(sessionName);
+        // Update task via API
+        const res = await fetch(`${config.apiUrl}/api/tasks/${options.taskId}`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+                worktreeHasConflicts: conflictResult.hasConflicts,
+                worktreeConflictFiles: conflictResult.conflictFiles,
+                worktreeConflictCheckedAt: conflictResult.checkedAt.toISOString(),
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        if (options.json) {
+            console.log(JSON.stringify({
+                success: true,
+                taskId: options.taskId,
+                hasConflicts: conflictResult.hasConflicts,
+                conflictFiles: conflictResult.conflictFiles,
+                checkedAt: conflictResult.checkedAt.toISOString(),
+            }, null, 2));
+        }
+        else {
+            if (conflictResult.hasConflicts) {
+                console.log(`⚠ Conflicts detected in ${sessionName}`);
+                console.log(`  Files with conflicts:`);
+                for (const file of conflictResult.conflictFiles.slice(0, 5)) {
+                    console.log(`    - ${file}`);
+                }
+                if (conflictResult.conflictFiles.length > 5) {
+                    console.log(`    ... and ${conflictResult.conflictFiles.length - 5} more`);
+                }
+            }
+            else {
+                console.log(`✓ No conflicts in ${sessionName}`);
+            }
+            console.log(`  Updated task ${options.taskId}`);
+        }
+    }
+    catch (error) {
+        console.error("Error checking conflicts:", error instanceof Error ? error.message : error);
+        process.exit(1);
+    }
+});
+// husky worktree poll-actions
+worktreeCommand
+    .command("poll-actions")
+    .description("Poll for pending worktree actions from dashboard")
+    .option("-p, --project <path>", "Project directory (default: current directory)")
+    .option("--execute", "Execute pending actions immediately")
+    .option("--json", "Output as JSON")
+    .action(async (options) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+        console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+        process.exit(1);
+    }
+    try {
+        // Fetch pending actions
+        const res = await fetch(`${config.apiUrl}/api/worktrees/pending`, {
+            headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        });
+        if (!res.ok) {
+            throw new Error(`API error: ${res.status}`);
+        }
+        const data = await res.json();
+        const pendingActions = data.pendingActions || [];
+        if (options.json && !options.execute) {
+            console.log(JSON.stringify({ pendingActions }, null, 2));
+            return;
+        }
+        if (pendingActions.length === 0) {
+            if (!options.json) {
+                console.log("No pending actions.");
+            }
+            return;
+        }
+        if (!options.execute) {
+            console.log(`\n  PENDING WORKTREE ACTIONS`);
+            console.log("  " + "-".repeat(60));
+            for (const action of pendingActions) {
+                const icon = action.action === "merge" ? "↑" : "✕";
+                console.log(`  ${icon} ${action.action.toUpperCase().padEnd(8)} ${action.taskId}`);
+                console.log(`    Branch: ${action.worktreeBranch}`);
+                console.log(`    Path:   ${action.worktreePath}`);
+            }
+            console.log("");
+            console.log("  Use --execute to process these actions");
+            return;
+        }
+        // Execute pending actions
+        const projectDir = getProjectDir(options);
+        const results = [];
+        for (const action of pendingActions) {
+            console.log(`\nExecuting ${action.action} for task ${action.taskId}...`);
+            // Extract session name from branch (e.g., "husky/task-abc123" -> "task-abc123")
+            const sessionName = action.worktreeBranch.replace("husky/", "");
+            const manager = new WorktreeManager(projectDir);
+            let success = false;
+            let error;
+            try {
+                if (action.action === "merge") {
+                    // Execute merge with lock
+                    success = await withMergeLock(projectDir, sessionName, async () => {
+                        return manager.mergeWorktree(sessionName, {
+                            deleteAfter: false,
+                            message: `husky: Merge ${action.worktreeBranch} (via dashboard)`,
+                        });
+                    });
+                    if (!success) {
+                        error = "Merge failed - check for conflicts";
+                    }
+                }
+                else if (action.action === "cleanup") {
+                    // Execute cleanup
+                    manager.removeWorktree(sessionName, true);
+                    success = true;
+                }
+            }
+            catch (err) {
+                success = false;
+                error = err instanceof Error ? err.message : "Unknown error";
+            }
+            // Report result to dashboard
+            const completeRes = await fetch(`${config.apiUrl}/api/worktrees/${action.taskId}/action`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+                },
+                body: JSON.stringify({
+                    status: success ? "completed" : "failed",
+                    error,
+                }),
+            });
+            if (!completeRes.ok) {
+                console.error(`  Warning: Failed to report status to dashboard`);
+            }
+            results.push({ taskId: action.taskId, action: action.action, success, error });
+            if (success) {
+                console.log(`  ✓ ${action.action} completed`);
+            }
+            else {
+                console.log(`  ✗ ${action.action} failed: ${error}`);
+            }
+        }
+        if (options.json) {
+            console.log(JSON.stringify({ results }, null, 2));
+        }
+    }
+    catch (error) {
+        console.error("Error polling actions:", error instanceof Error ? error.message : error);
+        process.exit(1);
+    }
+});
+// husky worktree push <session-name>
+worktreeCommand
+    .command("push <session-name>")
+    .description("Push worktree branch to remote")
+    .option("-p, --project <path>", "Project directory (default: current directory)")
+    .option("-f, --force", "Force push")
+    .option("--json", "Output as JSON")
+    .action(async (sessionName, options) => {
+    try {
+        const manager = getManager(options);
+        const info = manager.getWorktree(sessionName);
+        if (!info) {
+            console.error(`Error: No worktree found for session: ${sessionName}`);
+            process.exit(1);
+        }
+        const success = manager.pushWorktreeBranch(sessionName, options.force);
+        if (options.json) {
+            console.log(JSON.stringify({ success, sessionName, branch: info.branch }, null, 2));
+        }
+        if (!success) {
+            process.exit(1);
+        }
+    }
+    catch (error) {
+        console.error("Error pushing branch:", error instanceof Error ? error.message : error);
+        process.exit(1);
+    }
+});
+// husky worktree pr <session-name>
+worktreeCommand
+    .command("pr <session-name>")
+    .description("Create a pull request for worktree branch")
+    .option("-p, --project <path>", "Project directory (default: current directory)")
+    .requiredOption("-t, --title <title>", "PR title")
+    .option("-b, --body <body>", "PR body/description")
+    .option("--draft", "Create as draft PR")
+    .option("--push", "Push branch before creating PR")
+    .option("--task-id <id>", "Task ID to update with PR URL")
+    .option("--json", "Output as JSON")
+    .action(async (sessionName, options) => {
+    const config = getConfig();
+    try {
+        const manager = getManager(options);
+        const info = manager.getWorktree(sessionName);
+        if (!info) {
+            console.error(`Error: No worktree found for session: ${sessionName}`);
+            process.exit(1);
+        }
+        // Push first if requested
+        if (options.push) {
+            const pushSuccess = manager.pushWorktreeBranch(sessionName);
+            if (!pushSuccess) {
+                console.error("Failed to push branch");
+                process.exit(1);
+            }
+        }
+        // Create PR
+        const result = manager.createPullRequest(sessionName, {
+            title: options.title,
+            body: options.body,
+            draft: options.draft,
+        });
+        if (!result.success) {
+            console.error(`Error creating PR: ${result.error}`);
+            process.exit(1);
+        }
+        // Update task with PR URL if specified
+        if (options.taskId && config.apiUrl && result.prUrl) {
+            try {
+                await fetch(`${config.apiUrl}/api/tasks/${options.taskId}`, {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+                    },
+                    body: JSON.stringify({
+                        result: {
+                            prUrl: result.prUrl,
+                            completedAt: new Date().toISOString(),
+                        },
+                    }),
+                });
+            }
+            catch {
+                console.warn("Warning: Could not update task with PR URL");
+            }
+        }
+        if (options.json) {
+            console.log(JSON.stringify({
+                success: true,
+                sessionName,
+                branch: info.branch,
+                prUrl: result.prUrl,
+            }, null, 2));
+        }
+        else {
+            console.log(`✓ Pull request created: ${result.prUrl}`);
+            if (options.taskId) {
+                console.log(`  Updated task ${options.taskId}`);
+            }
+        }
+    }
+    catch (error) {
+        console.error("Error creating PR:", error instanceof Error ? error.message : error);
+        process.exit(1);
+    }
+});
+// husky worktree sync-all
+worktreeCommand
+    .command("sync-all")
+    .description("Sync stats and check conflicts for all worktrees with linked tasks")
+    .option("-p, --project <path>", "Project directory (default: current directory)")
+    .option("--json", "Output as JSON")
+    .action(async (options) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+        console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+        process.exit(1);
+    }
+    try {
+        const manager = getManager(options);
+        const worktrees = manager.listWorktrees();
+        if (worktrees.length === 0) {
+            console.log("No worktrees found.");
+            return;
+        }
+        // Fetch tasks with worktrees to find linked tasks
+        const tasksRes = await fetch(`${config.apiUrl}/api/worktrees`, {
+            headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        });
+        if (!tasksRes.ok) {
+            throw new Error(`API error: ${tasksRes.status}`);
+        }
+        const tasksData = await tasksRes.json();
+        const tasksByBranch = new Map();
+        for (const wt of tasksData.worktrees || []) {
+            tasksByBranch.set(wt.worktreeBranch, wt.taskId);
+        }
+        const results = [];
+        for (const wt of worktrees) {
+            const taskId = tasksByBranch.get(wt.branch);
+            if (!taskId) {
+                results.push({ sessionName: wt.sessionName, synced: false });
+                continue;
+            }
+            // Check conflicts
+            const conflictResult = manager.checkMergeConflicts(wt.sessionName);
+            // Prepare update
+            const updatePayload = {
+                worktreePath: wt.path,
+                worktreeBranch: wt.branch,
+                worktreeStats: {
+                    commitCount: wt.stats.commitCount,
+                    filesChanged: wt.stats.filesChanged,
+                    additions: wt.stats.additions,
+                    deletions: wt.stats.deletions,
+                    lastUpdated: new Date().toISOString(),
+                },
+                worktreeHasConflicts: conflictResult.hasConflicts,
+                worktreeConflictFiles: conflictResult.conflictFiles,
+                worktreeConflictCheckedAt: conflictResult.checkedAt.toISOString(),
+            };
+            // Update task
+            const updateRes = await fetch(`${config.apiUrl}/api/tasks/${taskId}`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+                },
+                body: JSON.stringify(updatePayload),
+            });
+            results.push({
+                sessionName: wt.sessionName,
+                taskId,
+                synced: updateRes.ok,
+                hasConflicts: conflictResult.hasConflicts,
+            });
+        }
+        if (options.json) {
+            console.log(JSON.stringify({ results }, null, 2));
+        }
+        else {
+            console.log(`\n  WORKTREE SYNC RESULTS`);
+            console.log("  " + "-".repeat(60));
+            for (const r of results) {
+                const icon = r.synced ? "✓" : r.taskId ? "✗" : "○";
+                const conflictIcon = r.hasConflicts ? " ⚠" : "";
+                const taskInfo = r.taskId ? ` → ${r.taskId}` : " (no linked task)";
+                console.log(`  ${icon} ${r.sessionName}${taskInfo}${conflictIcon}`);
+            }
+            const synced = results.filter(r => r.synced).length;
+            const conflicts = results.filter(r => r.hasConflicts).length;
+            console.log("");
+            console.log(`  Synced: ${synced}/${results.length}`);
+            if (conflicts > 0) {
+                console.log(`  With conflicts: ${conflicts}`);
+            }
+        }
+    }
+    catch (error) {
+        console.error("Error syncing worktrees:", error instanceof Error ? error.message : error);
+        process.exit(1);
+    }
+});

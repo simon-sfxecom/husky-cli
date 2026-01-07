@@ -33,6 +33,11 @@ export interface MergeOptions {
     deleteAfter?: boolean;
     message?: string;
 }
+export interface ConflictCheckResult {
+    hasConflicts: boolean;
+    conflictFiles: string[];
+    checkedAt: Date;
+}
 export declare class WorktreeManager {
     private projectDir;
     private baseBranch;
@@ -130,4 +135,25 @@ export declare class WorktreeManager {
      * Get the worktrees directory.
      */
     getWorktreesDir(): string;
+    /**
+     * Check if a worktree branch would have merge conflicts with base branch.
+     * Uses git merge-tree to simulate the merge without actually doing it.
+     */
+    checkMergeConflicts(sessionName: string): ConflictCheckResult;
+    /**
+     * Push the worktree branch to remote.
+     */
+    pushWorktreeBranch(sessionName: string, force?: boolean): boolean;
+    /**
+     * Create a PR for a worktree branch using gh CLI.
+     */
+    createPullRequest(sessionName: string, options: {
+        title: string;
+        body?: string;
+        draft?: boolean;
+    }): {
+        success: boolean;
+        prUrl?: string;
+        error?: string;
+    };
 }

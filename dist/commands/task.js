@@ -221,7 +221,8 @@ taskCommand
 taskCommand
     .command("start <id>")
     .description("Start working on a task")
-    .action(async (id) => {
+    .option("--no-worktree", "Skip worktree creation")
+    .action(async (id, options) => {
     const config = getConfig();
     if (!config.apiUrl) {
         console.error("Error: API URL not configured.");
@@ -232,6 +233,15 @@ taskCommand
         const workerId = await ensureWorkerRegistered(config.apiUrl, config.apiKey || "");
         const sessionId = generateSessionId();
         await registerSession(config.apiUrl, config.apiKey || "", workerId, sessionId);
+        // Create worktree for isolation (unless --no-worktree)
+        let worktreeInfo = null;
+        if (options.worktree !== false) {
+            worktreeInfo = createWorktreeForTask(id);
+            if (worktreeInfo) {
+                console.log(`✓ Created worktree: ${worktreeInfo.path}`);
+                console.log(`  Branch: ${worktreeInfo.branch}`);
+            }
+        }
         const res = await fetch(`${config.apiUrl}/api/tasks/${id}/start`, {
             method: "POST",
             headers: {
@@ -242,6 +252,11 @@ taskCommand
                 agent: "claude-code",
                 workerId,
                 sessionId,
+                // Include worktree info if created
+                ...(worktreeInfo ? {
+                    worktreePath: worktreeInfo.path,
+                    worktreeBranch: worktreeInfo.branch,
+                } : {}),
             }),
         });
         if (!res.ok) {
@@ -251,6 +266,10 @@ taskCommand
         console.log(`✓ Started: ${task.title}`);
         console.log(`  Worker: ${workerId}`);
         console.log(`  Session: ${sessionId}`);
+        // Show hint to cd into worktree
+        if (worktreeInfo) {
+            console.log(`\n💡 To work in isolation: cd ${worktreeInfo.path}`);
+        }
     }
     catch (error) {
         console.error("Error starting task:", error);
@@ -547,11 +566,23 @@ taskCommand
 });
 // husky task message <id> "message" - post status message to task
 taskCommand
-    .command("message <id> <message>")
+    .command("message [id] [message]")
     .description("Post a status message to a task")
-    .action(async (id, message) => {
+    .option("-m, --message <text>", "Message text (alternative to positional arg)")
+    .option("--id <taskId>", "Task ID (alternative to positional arg, or use HUSKY_TASK_ID)")
+    .action(async (idArg, messageArg, options) => {
     const config = ensureConfig();
-    const taskId = id;
+    // Support both: `husky task message <id> <msg>` and `husky task message -m <msg> --id <id>`
+    const taskId = idArg || options.id || process.env.HUSKY_TASK_ID;
+    const message = messageArg || options.message;
+    if (!taskId) {
+        console.error("Error: Task ID required. Use positional arg, --id, or set HUSKY_TASK_ID");
+        process.exit(1);
+    }
+    if (!message) {
+        console.error("Error: Message required. Use positional arg or -m/--message");
+        process.exit(1);
+    }
     try {
         const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/status`, {
             method: "POST",

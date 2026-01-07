@@ -2,7 +2,7 @@
  * LLM Context Generator
  * Outputs markdown reference for LLM agents
  */
-const VERSION = "0.9.4";
+const VERSION = "0.9.7";
 export function generateLLMContext() {
     return `# Husky CLI Reference (v${VERSION})
 
@@ -54,9 +54,15 @@ husky config test
 husky task list [--status <status>]     # List tasks
 husky task get <id>                     # Get task details
 husky task create                       # Create new task
-husky task start <id>                   # Start working on task
+husky task start <id>                   # Start task (auto-creates worktree!)
+husky task start <id> --no-worktree     # Start without worktree
 husky task done <id> [--pr <url>]       # Mark task as done
 husky task update <id>                  # Update task fields
+husky task assign <id> <assignee>       # Assign task
+husky task log <id>                     # View task activity log
+husky task message <id> "msg"           # Post status message (positional)
+husky task message -m "msg" --id <id>   # Post status message (flags)
+husky task message -m "msg"             # Uses HUSKY_TASK_ID env var
 \`\`\`
 
 ### Projects
@@ -64,13 +70,106 @@ husky task update <id>                  # Update task fields
 husky project list                      # List projects
 husky project get <id>                  # Get project details
 husky project create                    # Create new project
+husky project tasks <id>                # List project tasks
 \`\`\`
 
-### Worktrees (Git)
+### Roadmaps
+\`\`\`bash
+husky roadmap list                      # List roadmaps
+husky roadmap get <id>                  # Get roadmap details
+husky roadmap create                    # Create new roadmap
+husky roadmap milestones <id>           # List milestones
+husky roadmap add-milestone <id>        # Add milestone to roadmap
+\`\`\`
+
+### Ideas
+\`\`\`bash
+husky idea list                         # List ideas
+husky idea get <id>                     # Get idea details
+husky idea create                       # Create new idea
+husky idea vote <id>                    # Vote on idea
+\`\`\`
+
+### Workflows
+\`\`\`bash
+husky workflow list                     # List workflows
+husky workflow get <id>                 # Get workflow details
+husky workflow create                   # Create new workflow
+husky workflow run <id>                 # Execute workflow
+\`\`\`
+
+### Departments
+\`\`\`bash
+husky department list                   # List departments
+husky department get <id>               # Get department details
+husky department members <id>           # List department members
+\`\`\`
+
+### Processes
+\`\`\`bash
+husky process list                      # List processes
+husky process get <id>                  # Get process details
+husky process run <id>                  # Run process
+\`\`\`
+
+### Strategy
+\`\`\`bash
+husky strategy list                     # List strategy items
+husky strategy get <id>                 # Get strategy details
+husky strategy update <id>              # Update strategy
+\`\`\`
+
+### Changelog
+\`\`\`bash
+husky changelog generate                # Generate changelog from commits
+husky changelog list                    # List changelogs
+\`\`\`
+
+### Worktrees (Git Isolation)
 \`\`\`bash
 husky worktree list                     # List worktrees
 husky worktree create <name>            # Create isolated worktree
-husky worktree delete <name>            # Delete worktree
+husky worktree create <name> --task-id <id>  # Create and register with task
+husky worktree merge <name>             # Merge back to base branch
+husky worktree push <name>              # Push branch to remote
+husky worktree pr <name> -t "Title"     # Create pull request
+husky worktree remove <name>            # Remove worktree
+husky worktree sync-stats <name> --task-id <id>  # Sync stats to dashboard
+\`\`\`
+
+### VM Sessions (Cloud Agents)
+\`\`\`bash
+husky vm list                           # List VM sessions
+husky vm create                         # Create new VM
+husky vm status <id>                    # Get VM status
+husky vm ssh <id>                       # SSH into VM
+husky vm delete <id>                    # Delete VM
+\`\`\`
+
+### Jules Sessions (AI Agent)
+\`\`\`bash
+husky jules list                        # List Jules sessions
+husky jules create                      # Create new session
+husky jules status <id>                 # Get session status
+husky jules logs <id>                   # View session logs
+\`\`\`
+
+### Workers (Multi-Agent Coordination)
+\`\`\`bash
+husky worker whoami                     # Show current worker identity
+husky worker register                   # Register worker with API
+husky worker list                       # List all workers
+husky worker sessions                   # List active sessions
+husky worker activity                   # Who is working on what
+\`\`\`
+
+### Utility Commands
+\`\`\`bash
+husky explain <command>                 # Explain CLI commands
+husky settings list                     # List dashboard settings
+husky settings set <key> <value>        # Update setting
+husky completion bash|zsh|fish          # Generate shell completion
+husky llm                               # Output LLM reference docs
 \`\`\`
 
 ---

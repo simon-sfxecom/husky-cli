@@ -1,8 +1,10 @@
 import { Command } from "commander";
 import { getConfig } from "./config.js";
 import * as readline from "readline";
-export const vmCommand = new Command("vm")
-    .description("Manage VM sessions");
+import * as fs from "fs";
+import * as path from "path";
+import { DEFAULT_AGENT_CONFIGS, generateStartupScript, listDefaultAgentTypes, getDefaultAgentConfig, } from "../lib/agent-templates.js";
+export const vmCommand = new Command("vm").description("Manage VM sessions");
 // Helper: Ensure API is configured
 function ensureConfig() {
     const config = getConfig();
@@ -11,6 +13,50 @@ function ensureConfig() {
         process.exit(1);
     }
     return config;
+}
+async function fetchAgentTypes() {
+    const config = getConfig();
+    if (!config.apiUrl)
+        return null;
+    try {
+        const res = await fetch(`${config.apiUrl}/api/agent-types`, {
+            headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        });
+        if (!res.ok)
+            return null;
+        return await res.json();
+    }
+    catch {
+        return null;
+    }
+}
+async function fetchAgentTypeBySlug(slug) {
+    const config = getConfig();
+    if (!config.apiUrl)
+        return null;
+    try {
+        const res = await fetch(`${config.apiUrl}/api/agent-types?slug=${slug}`, {
+            headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        });
+        if (!res.ok)
+            return null;
+        return await res.json();
+    }
+    catch {
+        return null;
+    }
+}
+async function getAgentTypeConfig(slug) {
+    const apiType = await fetchAgentTypeBySlug(slug);
+    if (apiType) {
+        return { config: apiType.agentConfig, name: apiType.name };
+    }
+    const defaultConfig = getDefaultAgentConfig(slug);
+    if (defaultConfig) {
+        const name = slug.charAt(0).toUpperCase() + slug.slice(1) + " Agent";
+        return { config: defaultConfig, name };
+    }
+    return null;
 }
 // Helper: Prompt for confirmation
 async function confirm(message) {
@@ -71,19 +117,40 @@ vmCommand
     .command("create <name>")
     .description("Create a new VM session")
     .option("-p, --prompt <prompt>", "Initial prompt for the agent")
-    .option("--agent <agent>", "Agent type (claude-code, gemini-cli, aider, custom)", "claude-code")
+    .option("--agent <agent>", "Agent type (claude-code, gemini-cli, aider, custom)", "gemini-cli")
+    .option("-t, --type <type>", "Business agent type (support, accounting, marketing, research)")
     .option("--config <configId>", "VM config to use")
     .option("--project <projectId>", "Link to project")
     .option("--task <taskId>", "Link to task")
     .option("--repo <repoUrl>", "Git repository URL")
     .option("--branch <branch>", "Git branch to use")
     .option("--machine-type <machineType>", "GCP machine type", "e2-medium")
-    .option("--zone <zone>", "GCP zone", "us-central1-a")
+    .option("--zone <zone>", "GCP zone", "europe-west1-b")
     .option("--json", "Output as JSON")
     .action(async (name, options) => {
     const config = ensureConfig();
+    const validBusinessTypes = [
+        "support",
+        "accounting",
+        "marketing",
+        "research",
+    ];
+    if (options.type && !validBusinessTypes.includes(options.type)) {
+        console.error(`Error: Invalid business agent type '${options.type}'`);
+        console.error(`Valid types: ${validBusinessTypes.join(", ")}`);
+        process.exit(1);
+    }
+    if (options.type && !options.prompt) {
+        const defaultPrompts = {
+            support: "Du bist ein Support Agent. Starte mit /shift-start um die Schicht zu beginnen.",
+            accounting: "Du bist ein Accounting Agent. Pruefe /inbox fuer neue Belege.",
+            marketing: "Du bist ein Marketing Agent. Pruefe /campaigns fuer aktuelle Kampagnen.",
+            research: "Du bist ein Research Agent. Pruefe /youtube fuer neue Videos zu analysieren.",
+        };
+        options.prompt = defaultPrompts[options.type] || "Agent bereit.";
+    }
     if (!options.prompt) {
-        console.error("Error: --prompt is required");
+        console.error("Error: --prompt is required (or use --type for default prompt)");
         process.exit(1);
     }
     try {
@@ -97,6 +164,7 @@ vmCommand
                 name,
                 prompt: options.prompt,
                 agentType: options.agent,
+                businessAgentType: options.type,
                 taskId: options.task,
                 workflowId: options.project,
                 repoUrl: options.repo,
@@ -118,9 +186,16 @@ vmCommand
             console.log(`Created VM session: ${session.name}`);
             console.log(`  ID:       ${session.id}`);
             console.log(`  Agent:    ${session.agentType}`);
+            if (session.businessAgentType) {
+                console.log(`  Type:     ${session.businessAgentType}`);
+            }
             console.log(`  Status:   ${formatStatus(session.vmStatus)}`);
             console.log(`  VM Name:  ${session.vmName}`);
+            console.log(`  Zone:     ${options.zone}`);
             console.log(`\nTo start the VM, run: husky vm start ${session.id}`);
+            if (session.businessAgentType) {
+                console.log(`\nAfter VM is ready, the ${session.businessAgentType} agent will be auto-configured.`);
+            }
         }
     }
     catch (error) {
@@ -523,6 +598,150 @@ vmCommand
         process.exit(1);
     }
 });
+vmCommand
+    .command("types")
+    .description("List available business agent types")
+    .option("--json", "Output as JSON")
+    .action(async (options) => {
+    const apiTypes = await fetchAgentTypes();
+    if (apiTypes && apiTypes.length > 0) {
+        if (options.json) {
+            console.log(JSON.stringify(apiTypes, null, 2));
+            return;
+        }
+        console.log("\n  Available Agent Types (from API)");
+        console.log("  " + "-".repeat(70));
+        for (const type of apiTypes) {
+            console.log(`\n  ${type.slug.toUpperCase()} - ${type.name}`);
+            console.log(`    ${type.description}`);
+            console.log(`    Directories: ${type.agentConfig.directories.slice(0, 3).join(", ")}...`);
+        }
+    }
+    else {
+        const types = listDefaultAgentTypes();
+        if (options.json) {
+            console.log(JSON.stringify(DEFAULT_AGENT_CONFIGS, null, 2));
+            return;
+        }
+        console.log("\n  Available Agent Types (defaults)");
+        console.log("  " + "-".repeat(70));
+        for (const type of types) {
+            const config = DEFAULT_AGENT_CONFIGS[type];
+            console.log(`\n  ${type.toUpperCase()}`);
+            console.log(`    Default prompt: ${config.defaultPrompt}`);
+            console.log(`    Directories: ${config.directories.slice(0, 3).join(", ")}...`);
+        }
+    }
+    console.log("\n  Usage:");
+    console.log("    husky vm create my-agent --type support");
+    console.log("    husky vm init --type accounting\n");
+});
+vmCommand
+    .command("init")
+    .description("Initialize agent workspace on current machine (run this ON the VM)")
+    .requiredOption("-t, --type <type>", "Business agent type slug (e.g., support, accounting, marketing, research)")
+    .option("--workspace <path>", "Workspace directory", process.env.HOME + "/workspace")
+    .option("--json", "Output as JSON")
+    .action(async (options) => {
+    const agentTypeSlug = options.type;
+    const typeData = await getAgentTypeConfig(agentTypeSlug);
+    if (!typeData) {
+        const validTypes = listDefaultAgentTypes();
+        console.error(`Error: Unknown agent type '${agentTypeSlug}'`);
+        console.error(`Default types: ${validTypes.join(", ")}`);
+        console.error(`Or configure API to fetch custom types.`);
+        process.exit(1);
+    }
+    const { config, name: agentName } = typeData;
+    const workspace = options.workspace;
+    console.log(`\n  Initializing ${agentName}...`);
+    console.log(`  Workspace: ${workspace}\n`);
+    try {
+        if (!fs.existsSync(workspace)) {
+            fs.mkdirSync(workspace, { recursive: true });
+        }
+        for (const dir of config.directories) {
+            const fullPath = path.join(workspace, dir);
+            if (!fs.existsSync(fullPath)) {
+                fs.mkdirSync(fullPath, { recursive: true });
+                console.log(`  Created: ${dir}`);
+            }
+        }
+        const geminiDir = path.join(workspace, ".gemini", "commands");
+        if (!fs.existsSync(geminiDir)) {
+            fs.mkdirSync(geminiDir, { recursive: true });
+        }
+        const scriptsDir = path.join(workspace, "scripts");
+        if (!fs.existsSync(scriptsDir)) {
+            fs.mkdirSync(scriptsDir, { recursive: true });
+        }
+        const geminiMd = `# ${agentName} VM - Project Rules
+
+## Rolle
+Du bist ein autonomer ${agentName}. 
+
+## Tech Stack
+- Runtime: Google Cloud VM
+- AI Model: Google Vertex AI (europe-west1) - DSGVO-konform
+- CLI: Husky CLI fuer alle Business-Operationen
+
+## Workspace
+${config.directories.map((d) => `- ${d}/`).join("\n")}
+
+## Status Updates
+\`\`\`bash
+husky task message <task-id> -m "<status>"
+\`\`\`
+`;
+        fs.writeFileSync(path.join(workspace, "GEMINI.md"), geminiMd);
+        console.log(`  Created: GEMINI.md`);
+        if (options.json) {
+            console.log(JSON.stringify({ success: true, workspace, type: agentTypeSlug, name: agentName }, null, 2));
+        }
+        else {
+            console.log(`\n  ${agentName} initialized!`);
+            console.log(`\n  Next steps:`);
+            console.log(`    cd ${workspace}`);
+            console.log(`    gemini`);
+        }
+    }
+    catch (error) {
+        console.error("Error initializing agent:", error);
+        process.exit(1);
+    }
+});
+vmCommand
+    .command("startup-script")
+    .description("Generate VM startup script for agent type")
+    .requiredOption("-t, --type <type>", "Business agent type slug")
+    .option("--husky-url <url>", "Husky API URL")
+    .option("--husky-key <key>", "Husky API Key")
+    .option("--project <project>", "GCP Project ID")
+    .action(async (options) => {
+    const apiType = await fetchAgentTypeBySlug(options.type);
+    if (apiType) {
+        const script = generateStartupScript({
+            id: apiType.id,
+            departmentId: apiType.departmentId || "",
+            name: apiType.name,
+            slug: apiType.slug,
+            description: apiType.description,
+            agentConfig: apiType.agentConfig,
+            createdAt: apiType.createdAt,
+            updatedAt: apiType.updatedAt,
+        }, options.huskyUrl, options.huskyKey, options.project);
+        console.log(script);
+        return;
+    }
+    const validTypes = listDefaultAgentTypes();
+    if (!validTypes.includes(options.type)) {
+        console.error(`Error: Unknown agent type '${options.type}'`);
+        console.error(`Default types: ${validTypes.join(", ")}`);
+        process.exit(1);
+    }
+    const script = generateStartupScript(options.type, options.huskyUrl, options.huskyKey, options.project);
+    console.log(script);
+});
 // Print helpers
 function printVMSessions(sessions, stats) {
     if (sessions.length === 0) {
@@ -538,7 +757,9 @@ function printVMSessions(sessions, stats) {
     console.log(`  ${"ID".padEnd(24)} ${"NAME".padEnd(20)} ${"STATUS".padEnd(16)} ${"AGENT".padEnd(14)} CREATED`);
     console.log("  " + "-".repeat(90));
     for (const session of sessions) {
-        const truncatedName = session.name.length > 18 ? session.name.substring(0, 15) + "..." : session.name;
+        const truncatedName = session.name.length > 18
+            ? session.name.substring(0, 15) + "..."
+            : session.name;
         const status = formatStatus(session.vmStatus).padEnd(16);
         const createdAt = new Date(session.createdAt).toLocaleDateString();
         console.log(`  ${session.id.padEnd(24)} ${truncatedName.padEnd(20)} ${status} ${session.agentType.padEnd(14)} ${createdAt}`);
@@ -551,6 +772,9 @@ function printVMSessionDetail(session) {
     console.log(`  ID:           ${session.id}`);
     console.log(`  Status:       ${formatStatus(session.vmStatus)}`);
     console.log(`  Agent:        ${session.agentType}`);
+    if (session.businessAgentType) {
+        console.log(`  Type:         ${session.businessAgentType}`);
+    }
     console.log(`  VM Name:      ${session.vmName}`);
     console.log(`  Zone:         ${session.vmZone}`);
     console.log(`  Machine Type: ${session.machineType}`);

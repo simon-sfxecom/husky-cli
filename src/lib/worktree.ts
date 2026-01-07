@@ -46,6 +46,12 @@ export interface MergeOptions {
   message?: string;
 }
 
+export interface ConflictCheckResult {
+  hasConflicts: boolean;
+  conflictFiles: string[];
+  checkedAt: Date;
+}
+
 export class WorktreeManager {
   private projectDir: string;
   private baseBranch: string;
@@ -589,5 +595,159 @@ export class WorktreeManager {
    */
   getWorktreesDir(): string {
     return this.worktreesDir;
+  }
+
+  /**
+   * Check if a worktree branch would have merge conflicts with base branch.
+   * Uses git merge-tree to simulate the merge without actually doing it.
+   */
+  checkMergeConflicts(sessionName: string): ConflictCheckResult {
+    const worktreePath = this.getWorktreePath(sessionName);
+    const branchName = this.getBranchName(sessionName);
+
+    if (!fs.existsSync(worktreePath)) {
+      return {
+        hasConflicts: false,
+        conflictFiles: [],
+        checkedAt: new Date(),
+      };
+    }
+
+    // Get the merge base
+    const mergeBaseResult = this.runGit([
+      "merge-base",
+      this.baseBranch,
+      branchName,
+    ]);
+
+    if (mergeBaseResult.status !== 0) {
+      // No common ancestor, can't check conflicts
+      return {
+        hasConflicts: false,
+        conflictFiles: [],
+        checkedAt: new Date(),
+      };
+    }
+
+    const mergeBase = mergeBaseResult.stdout.trim();
+
+    // Use git merge-tree to simulate the merge
+    const mergeTreeResult = this.runGit([
+      "merge-tree",
+      mergeBase,
+      this.baseBranch,
+      branchName,
+    ]);
+
+    // Parse the output for conflicts
+    const output = mergeTreeResult.stdout;
+    const conflictFiles: string[] = [];
+
+    // Look for conflict markers in merge-tree output
+    // Format: "changed in both" or conflict sections
+    const lines = output.split("\n");
+    let inConflict = false;
+
+    for (const line of lines) {
+      if (line.includes("changed in both") || line.includes("CONFLICT")) {
+        inConflict = true;
+      }
+      // Extract file paths from conflict sections
+      if (inConflict && line.match(/^\+\+\+|^---|^@@/)) {
+        const fileMatch = line.match(/^\+\+\+ b\/(.+)$/) || line.match(/^--- a\/(.+)$/);
+        if (fileMatch && fileMatch[1] && !conflictFiles.includes(fileMatch[1])) {
+          conflictFiles.push(fileMatch[1]);
+        }
+      }
+    }
+
+    // Alternative: use diff to find files changed in both branches
+    if (conflictFiles.length === 0 && output.includes("<<<<<<<")) {
+      // Parse conflict markers directly
+      const conflictMatches = output.matchAll(/\+\+\+ b\/([^\n]+)/g);
+      for (const match of conflictMatches) {
+        if (match[1] && !conflictFiles.includes(match[1])) {
+          conflictFiles.push(match[1]);
+        }
+      }
+    }
+
+    return {
+      hasConflicts: conflictFiles.length > 0 || output.includes("<<<<<<<") || output.includes("CONFLICT"),
+      conflictFiles,
+      checkedAt: new Date(),
+    };
+  }
+
+  /**
+   * Push the worktree branch to remote.
+   */
+  pushWorktreeBranch(sessionName: string, force = false): boolean {
+    const branchName = this.getBranchName(sessionName);
+
+    const pushArgs = ["push", "-u", "origin", branchName];
+    if (force) {
+      pushArgs.splice(1, 0, "--force");
+    }
+
+    const result = this.runGit(pushArgs);
+
+    if (result.status !== 0) {
+      console.error(`Failed to push branch: ${result.stderr}`);
+      return false;
+    }
+
+    console.log(`Pushed ${branchName} to origin`);
+    return true;
+  }
+
+  /**
+   * Create a PR for a worktree branch using gh CLI.
+   */
+  createPullRequest(
+    sessionName: string,
+    options: { title: string; body?: string; draft?: boolean }
+  ): { success: boolean; prUrl?: string; error?: string } {
+    const branchName = this.getBranchName(sessionName);
+
+    // Check if gh CLI is available
+    const ghCheck = spawnSync("which", ["gh"], { encoding: "utf-8" });
+    if (ghCheck.status !== 0) {
+      return { success: false, error: "GitHub CLI (gh) not installed" };
+    }
+
+    // Create PR
+    const prArgs = [
+      "pr",
+      "create",
+      "--base",
+      this.baseBranch,
+      "--head",
+      branchName,
+      "--title",
+      options.title,
+    ];
+
+    if (options.body) {
+      prArgs.push("--body", options.body);
+    }
+
+    if (options.draft) {
+      prArgs.push("--draft");
+    }
+
+    const result = spawnSync("gh", prArgs, {
+      cwd: this.projectDir,
+      encoding: "utf-8",
+      timeout: 60000,
+    });
+
+    if (result.status !== 0) {
+      return { success: false, error: result.stderr || "Failed to create PR" };
+    }
+
+    // Extract PR URL from output
+    const prUrl = result.stdout.trim();
+    return { success: true, prUrl };
   }
 }
