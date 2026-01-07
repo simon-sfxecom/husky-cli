@@ -13,6 +13,7 @@ import { roadmapsMenu } from "./interactive/roadmaps.js";
 import { strategyMenu } from "./interactive/strategy.js";
 import { changelogMenu } from "./interactive/changelog.js";
 import { worktreesMenu } from "./interactive/worktrees.js";
+import { businessMenu } from "./interactive/business.js";
 import { clearScreen, printHeader, pressEnterToContinue } from "./interactive/utils.js";
 // ============================================
 // MAIN MENU
@@ -36,6 +37,7 @@ export async function runInteractiveMode() {
             { name: "Jules Sessions", value: "jules", description: "Manage Jules AI sessions" },
             { name: "Worktrees", value: "worktrees", description: "Manage Git worktrees for agent isolation" },
             { name: "---", value: "separator3", description: "" },
+            { name: "Business Operations", value: "business", description: "Billbee, Zendesk, SeaTable, Qdrant" },
             { name: "Business Strategy", value: "strategy", description: "Manage business strategy" },
             { name: "Changelog", value: "changelog", description: "Generate and manage changelogs" },
             { name: "Dashboard Settings", value: "settings", description: "Manage dashboard settings" },
@@ -81,6 +83,9 @@ export async function runInteractiveMode() {
                     break;
                 case "strategy":
                     await strategyMenu();
+                    break;
+                case "business":
+                    await businessMenu();
                     break;
                 case "changelog":
                     await changelogMenu();

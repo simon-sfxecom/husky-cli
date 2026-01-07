@@ -18,12 +18,16 @@ import { settingsCommand } from "./commands/settings.js";
 import { strategyCommand } from "./commands/strategy.js";
 import { completionCommand } from "./commands/completion.js";
 import { worktreeCommand } from "./commands/worktree.js";
+import { workerCommand } from "./commands/worker.js";
+import { bizCommand } from "./commands/biz.js";
+import { printLLMContext, llmCommand } from "./commands/llm-context.js";
 import { runInteractiveMode } from "./commands/interactive.js";
 const program = new Command();
 program
     .name("husky")
     .description("CLI for Huskyv0 Task Orchestration with Claude Agent")
-    .version("0.6.0");
+    .version("0.9.4")
+    .option("--llm", "Output LLM reference documentation (markdown)");
 program.addCommand(taskCommand);
 program.addCommand(configCommand);
 program.addCommand(agentCommand);
@@ -42,6 +46,14 @@ program.addCommand(settingsCommand);
 program.addCommand(strategyCommand);
 program.addCommand(completionCommand);
 program.addCommand(worktreeCommand);
+program.addCommand(workerCommand);
+program.addCommand(bizCommand);
+program.addCommand(llmCommand);
+// Handle --llm flag specially
+if (process.argv.includes("--llm")) {
+    printLLMContext();
+    process.exit(0);
+}
 // Check if no command was provided - run interactive mode
 if (process.argv.length <= 2) {
     runInteractiveMode();

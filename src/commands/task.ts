@@ -369,7 +369,7 @@ taskCommand
   .description("Update task properties")
   .option("-t, --title <title>", "New title")
   .option("-d, --description <desc>", "New description")
-  .option("--status <status>", "New status (backlog, in_progress, review, done)")
+  .option("--status <status>", "New status (e.g., backlog, in_progress, review, done, or custom status)")
   .option("--priority <priority>", "New priority (low, medium, high, urgent)")
   .option("--assignee <assignee>", "New assignee (human, llm, unassigned)")
   .option("--project <projectId>", "Link to project")

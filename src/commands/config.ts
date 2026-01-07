@@ -11,6 +11,24 @@ interface Config {
   apiKey?: string;
   workerId?: string;
   workerName?: string;
+  // Billbee
+  billbeeApiKey?: string;
+  billbeeUsername?: string;
+  billbeePassword?: string;
+  billbeeBaseUrl?: string;
+  // Zendesk
+  zendeskSubdomain?: string;
+  zendeskEmail?: string;
+  zendeskApiToken?: string;
+  // SeaTable
+  seatableApiToken?: string;
+  seatableServerUrl?: string;
+  // Qdrant
+  qdrantUrl?: string;
+  qdrantApiKey?: string;
+  // GCP (Vertex AI)
+  gcpProjectId?: string;
+  gcpLocation?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -74,28 +92,60 @@ configCommand
   .action((key, value) => {
     const config = getConfig();
 
-    if (key === "api-url") {
+    // Key mappings for kebab-case to camelCase
+    const keyMappings: Record<string, keyof Config> = {
+      "api-url": "apiUrl",
+      "api-key": "apiKey",
+      // Billbee
+      "billbee-api-key": "billbeeApiKey",
+      "billbee-username": "billbeeUsername",
+      "billbee-password": "billbeePassword",
+      "billbee-base-url": "billbeeBaseUrl",
+      // Zendesk
+      "zendesk-subdomain": "zendeskSubdomain",
+      "zendesk-email": "zendeskEmail",
+      "zendesk-api-token": "zendeskApiToken",
+      // SeaTable
+      "seatable-api-token": "seatableApiToken",
+      "seatable-server-url": "seatableServerUrl",
+      // Qdrant
+      "qdrant-url": "qdrantUrl",
+      "qdrant-api-key": "qdrantApiKey",
+      // GCP
+      "gcp-project-id": "gcpProjectId",
+      "gcp-location": "gcpLocation",
+    };
+
+    const configKey = keyMappings[key];
+    if (!configKey) {
+      console.error(`Unknown config key: ${key}`);
+      console.log("Available keys:");
+      console.log("  Core:     api-url, api-key");
+      console.log("  Billbee:  billbee-api-key, billbee-username, billbee-password, billbee-base-url");
+      console.log("  Zendesk:  zendesk-subdomain, zendesk-email, zendesk-api-token");
+      console.log("  SeaTable: seatable-api-token, seatable-server-url");
+      console.log("  Qdrant:   qdrant-url, qdrant-api-key");
+      console.log("  GCP:      gcp-project-id, gcp-location");
+      process.exit(1);
+    }
+
+    // Validation for specific keys
+    if (key === "api-url" || key === "billbee-base-url") {
       const validation = validateApiUrl(value);
       if (!validation.valid) {
         console.error(`Error: ${validation.error}`);
         process.exit(1);
       }
-      config.apiUrl = value;
-    } else if (key === "api-key") {
-      const validation = validateApiKey(value);
-      if (!validation.valid) {
-        console.error(`Error: ${validation.error}`);
-        process.exit(1);
-      }
-      config.apiKey = value;
-    } else {
-      console.error(`Unknown config key: ${key}`);
-      console.log("Available keys: api-url, api-key");
-      process.exit(1);
     }
 
+    // Set the value
+    (config as Record<string, string>)[configKey] = value;
     saveConfig(config);
-    console.log(`Set ${key} = ${key === "api-key" ? "***" : value}`);
+
+    // Mask sensitive values in output
+    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token"];
+    const displayValue = sensitiveKeys.includes(key) ? "***" : value;
+    console.log(`✓ Set ${key} = ${displayValue}`);
   });
 
 // husky config get <key>
