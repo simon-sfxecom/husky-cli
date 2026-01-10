@@ -163,7 +163,6 @@ async function createVMSession(config: ValidConfig): Promise<void> {
       choices: [
         { name: "Claude Code", value: "claude-code" },
         { name: "Gemini CLI", value: "gemini-cli" },
-        { name: "Aider", value: "aider" },
         { name: "Custom", value: "custom" },
       ],
       default: "claude-code",

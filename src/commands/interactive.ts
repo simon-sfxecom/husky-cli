@@ -9,7 +9,7 @@ import { departmentsMenu } from "./interactive/departments.js";
 import { processesMenu } from "./interactive/processes.js";
 import { workflowsMenu } from "./interactive/workflows.js";
 import { vmSessionsMenu } from "./interactive/vm-sessions.js";
-import { julesSessionsMenu } from "./interactive/jules-sessions.js";
+
 import { roadmapsMenu } from "./interactive/roadmaps.js";
 import { strategyMenu } from "./interactive/strategy.js";
 import { changelogMenu } from "./interactive/changelog.js";
@@ -46,7 +46,6 @@ export async function runInteractiveMode(): Promise<void> {
       { name: "Processes", value: "processes", description: "Manage processes" },
       { name: "---", value: "separator2", description: "" },
       { name: "VM Sessions", value: "vm", description: "Manage VM sessions" },
-      { name: "Jules Sessions", value: "jules", description: "Manage Jules AI sessions" },
       { name: "Worktrees", value: "worktrees", description: "Manage Git worktrees for agent isolation" },
       { name: "---", value: "separator3", description: "" },
       { name: "Business Operations", value: "business", description: "Billbee, Zendesk, SeaTable, Qdrant" },
@@ -88,9 +87,6 @@ export async function runInteractiveMode(): Promise<void> {
           break;
         case "vm":
           await vmSessionsMenu();
-          break;
-        case "jules":
-          await julesSessionsMenu();
           break;
         case "worktrees":
           await worktreesMenu();

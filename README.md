@@ -111,19 +111,6 @@ husky vm update <session-id> --status approved
 husky vm delete <session-id>
 ```
 
-### Jules Session Management
-
-```bash
-husky jules list
-husky jules create --task-id <id> --prompt "..."
-husky jules get <session-id>
-husky jules message <session-id> --content "..."
-husky jules approve <session-id>
-husky jules activities <session-id>
-husky jules update <session-id> --status completed
-husky jules delete <session-id>
-```
-
 ### Business Strategy
 
 ```bash
@@ -186,6 +173,32 @@ husky vm-config create --machine-type e2-medium --disk-size 50
 husky vm-config update <config-id> --machine-type e2-standard-2
 husky vm-config delete <config-id>
 ```
+
+### Chat / Messaging
+
+```bash
+# Check pending messages
+husky chat pending
+husky chat pending --json
+
+# View inbox (GitHub + Google Chat)
+husky chat inbox
+husky chat inbox --unread
+
+# Reply to any message (auto-detects platform)
+husky chat reply-to <messageId> "Your response"
+
+# Reply in Google Chat thread
+husky chat reply-chat "Message" --thread <threadName>
+
+# Mark message as read
+husky chat mark-read <messageId>
+
+# Watch for messages (inject into tmux)
+husky chat watch-inject --tmux-session supervisor
+```
+
+The `reply-to` command automatically detects whether the message is from GitHub or Google Chat and uses the appropriate API to send the reply.
 
 ### Settings
 
@@ -282,6 +295,36 @@ husky --version
 ```
 
 ## Changelog
+
+### v1.1.0 (2026-01-09) - Unified Reply System
+
+**New Features:**
+- `husky chat reply-to` now supports both GitHub and Google Chat
+- Auto-detects platform from message metadata
+- GitHub replies use GitHub App (no PAT required on VM)
+
+**Improvements:**
+- Require 8+ character prefix for messageId matching (prevents misdirected replies)
+- Better error messages for short messageId prefixes
+
+### v1.0.0 (2026-01-08) - Supervisor Architecture
+
+**BREAKING CHANGES:**
+- Removed: `husky jules` commands (replaced by supervisor architecture)
+- Removed: `husky services` commands (deprecated)
+- Removed: VM Pool management (now automated by supervisor)
+- Deprecated: `husky agent` commands (use `husky task` instead)
+
+**New Features:**
+- Added: `husky chat` command for supervisor communication
+- Added: Project resolver to prevent orphaned tasks
+- Added: Implementation plans via `husky task plan`
+- Added: QA review pipeline support
+
+**Improvements:**
+- Version now read dynamically from package.json
+- Simplified task workflow
+- Scope-based API key system support
 
 ### v0.5.0 (2026-01-06)
 - Full Dashboard feature parity (69 new commands)

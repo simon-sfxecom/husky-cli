@@ -11,6 +11,7 @@ import {
   type AgentType,
   type AgentTypeConfig,
 } from "../lib/agent-templates.js";
+import { requirePermission } from "../lib/permissions.js";
 
 export const vmCommand = new Command("vm").description("Manage VM sessions");
 
@@ -115,7 +116,7 @@ type VMSessionStatus =
   | "preempted"
   | "rejected";
 
-type VMAgentType = "claude-code" | "gemini-cli" | "aider" | "custom";
+type VMAgentType = "claude-code" | "gemini-cli" | "custom";
 
 interface VMSession {
   id: string;
@@ -166,7 +167,7 @@ vmCommand
   )
   .option(
     "--agent <agent>",
-    "Filter by agent type (claude-code, gemini-cli, aider, custom)",
+    "Filter by agent type (claude-code, gemini-cli, custom)",
   )
   .action(async (options) => {
     const config = ensureConfig();
@@ -213,7 +214,7 @@ vmCommand
   .option("-p, --prompt <prompt>", "Initial prompt for the agent")
   .option(
     "--agent <agent>",
-    "Agent type (claude-code, gemini-cli, aider, custom)",
+    "Agent type (claude-code, gemini-cli, custom)",
     "gemini-cli",
   )
   .option(
@@ -229,6 +230,9 @@ vmCommand
   .option("--zone <zone>", "GCP zone", "europe-west1-b")
   .option("--json", "Output as JSON")
   .action(async (name, options) => {
+    // RBAC: Only supervisor and devops can create VMs
+    requirePermission("vm:create");
+
     const config = ensureConfig();
 
     const validBusinessTypes = [
@@ -484,6 +488,9 @@ vmCommand
   .description("Start/provision the VM")
   .option("--json", "Output as JSON")
   .action(async (id, options) => {
+    // RBAC: Only supervisor and devops can start VMs
+    requirePermission("vm:manage");
+
     const config = ensureConfig();
 
     console.log("Starting VM provisioning...");

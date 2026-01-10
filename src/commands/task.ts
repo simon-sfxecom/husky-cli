@@ -6,6 +6,8 @@ import { paginateList, printPaginated } from "../lib/pagination.js";
 import { ensureWorkerRegistered, generateSessionId, registerSession, sessionHeartbeat } from "../lib/worker.js";
 import { WorktreeManager } from "../lib/worktree.js";
 import { execSync } from "child_process";
+import { resolveProject, fetchProjects, formatProjectList, type ResolveResult } from "../lib/project-resolver.js";
+import { requirePermission } from "../lib/permissions.js";
 
 export const taskCommand = new Command("task")
   .description("Manage tasks");
@@ -312,7 +314,11 @@ taskCommand
   .command("done <id>")
   .description("Mark task as done")
   .option("--pr <url>", "Link to PR")
+  .option("--skip-qa", "Skip QA review and mark as done directly")
   .action(async (id, options) => {
+    // RBAC: Only supervisor and pr_agent can set tasks to done
+    requirePermission("task:done");
+
     const config = getConfig();
     if (!config.apiUrl) {
       console.error("Error: API URL not configured.");
@@ -326,7 +332,10 @@ taskCommand
           "Content-Type": "application/json",
           ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
         },
-        body: JSON.stringify({ prUrl: options.pr }),
+        body: JSON.stringify({ 
+          prUrl: options.pr,
+          skipQA: options.skipQa === true,
+        }),
       });
 
       if (!res.ok) {
@@ -334,19 +343,28 @@ taskCommand
       }
 
       const task = await res.json();
-      console.log(`✓ Completed: ${task.title}`);
+      
+      if (task.qaTriggered) {
+        console.log(`✓ Task moved to review: ${task.title}`);
+        console.log(`  QA pipeline triggered - awaiting verification`);
+      } else {
+        console.log(`✓ Completed: ${task.title}`);
+      }
+      
+      if (task.message) {
+        console.log(`  ${task.message}`);
+      }
     } catch (error) {
       console.error("Error completing task:", error);
       process.exit(1);
     }
   });
 
-// husky task create <title>
 taskCommand
   .command("create <title>")
   .description("Create a new task")
   .option("-d, --description <desc>", "Task description")
-  .option("--project <projectId>", "Project ID")
+  .option("--project <project>", "Project name or ID")
   .option("--path <path>", "Path in project")
   .option("-p, --priority <priority>", "Priority (low, medium, high)", "medium")
   .action(async (title, options) => {
@@ -354,6 +372,37 @@ taskCommand
     if (!config.apiUrl) {
       console.error("Error: API URL not configured.");
       process.exit(1);
+    }
+
+    let resolvedProjectId: string | undefined;
+    const resolverConfig = { apiUrl: config.apiUrl, apiKey: config.apiKey };
+
+    if (options.project) {
+      const resolved = await resolveProject(options.project, resolverConfig);
+
+      if (!resolved) {
+        const projects = await fetchProjects(resolverConfig);
+        console.error(`\n❌ Project "${options.project}" not found.\n`);
+        console.error(formatProjectList(projects));
+        process.exit(1);
+      }
+
+      if (resolved.resolvedBy === "name-match") {
+        console.log(`ℹ️  Resolved "${options.project}" → ${resolved.projectName} (${resolved.projectId})`);
+      }
+
+      if (resolved.resolvedBy === "fuzzy-match") {
+        const confirmed = await confirm(
+          `Did you mean "${resolved.projectName}"? (${Math.round(resolved.confidence * 100)}% match)`
+        );
+        if (!confirmed) {
+          console.log("Cancelled.");
+          process.exit(0);
+        }
+        console.log(`ℹ️  Using project: ${resolved.projectName} (${resolved.projectId})`);
+      }
+
+      resolvedProjectId = resolved.projectId;
     }
 
     try {
@@ -366,14 +415,15 @@ taskCommand
         body: JSON.stringify({
           title,
           description: options.description,
-          projectId: options.project,
+          projectId: resolvedProjectId,
           linkedPath: options.path,
           priority: options.priority,
         }),
       });
 
       if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${res.status}`);
       }
 
       const task = await res.json();
@@ -384,7 +434,6 @@ taskCommand
     }
   });
 
-// husky task update <id>
 taskCommand
   .command("update <id>")
   .description("Update task properties")
@@ -393,20 +442,47 @@ taskCommand
   .option("--status <status>", "New status (e.g., backlog, in_progress, review, done, or custom status)")
   .option("--priority <priority>", "New priority (low, medium, high, urgent)")
   .option("--assignee <assignee>", "New assignee (human, llm, unassigned)")
-  .option("--project <projectId>", "Link to project")
+  .option("--project <project>", "Link to project (name or ID)")
   .option("--no-worktree", "Skip automatic worktree creation when starting task")
   .option("--json", "Output as JSON")
   .action(async (id, options) => {
     const config = ensureConfig();
+    const resolverConfig = { apiUrl: config.apiUrl!, apiKey: config.apiKey };
 
-    // Build update payload with only changed fields
     const updates: Record<string, string> = {};
     if (options.title) updates.title = options.title;
     if (options.description) updates.description = options.description;
     if (options.status) updates.status = options.status;
     if (options.priority) updates.priority = options.priority;
     if (options.assignee) updates.assignee = options.assignee;
-    if (options.project) updates.projectId = options.project;
+
+    if (options.project) {
+      const resolved = await resolveProject(options.project, resolverConfig);
+
+      if (!resolved) {
+        const projects = await fetchProjects(resolverConfig);
+        console.error(`\n❌ Project "${options.project}" not found.\n`);
+        console.error(formatProjectList(projects));
+        process.exit(1);
+      }
+
+      if (resolved.resolvedBy === "name-match") {
+        console.log(`ℹ️  Resolved "${options.project}" → ${resolved.projectName} (${resolved.projectId})`);
+      }
+
+      if (resolved.resolvedBy === "fuzzy-match") {
+        const confirmed = await confirm(
+          `Did you mean "${resolved.projectName}"? (${Math.round(resolved.confidence * 100)}% match)`
+        );
+        if (!confirmed) {
+          console.log("Cancelled.");
+          process.exit(0);
+        }
+        console.log(`ℹ️  Using project: ${resolved.projectName} (${resolved.projectId})`);
+      }
+
+      updates.projectId = resolved.projectId;
+    }
 
     if (Object.keys(updates).length === 0) {
       console.error("Error: No update options provided. Use --help for available options.");

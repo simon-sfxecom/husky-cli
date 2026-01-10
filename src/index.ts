@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
+import { createRequire } from "module";
 import { taskCommand } from "./commands/task.js";
 import { configCommand } from "./commands/config.js";
 import { agentCommand } from "./commands/agent.js";
@@ -11,7 +12,7 @@ import { projectCommand } from "./commands/project.js";
 import { ideaCommand } from "./commands/idea.js";
 import { departmentCommand } from "./commands/department.js";
 import { workflowCommand } from "./commands/workflow.js";
-import { julesCommand } from "./commands/jules.js";
+
 import { vmCommand } from "./commands/vm.js";
 import { vmConfigCommand } from "./commands/vm-config.js";
 import { processCommand } from "./commands/process.js";
@@ -21,17 +22,25 @@ import { completionCommand } from "./commands/completion.js";
 import { worktreeCommand } from "./commands/worktree.js";
 import { workerCommand } from "./commands/worker.js";
 import { bizCommand } from "./commands/biz.js";
-import { servicesCommand } from "./commands/services.js";
+
 import { printLLMContext, llmCommand } from "./commands/llm-context.js";
+import { agentMsgCommand } from "./commands/agent-msg.js";
 import { runInteractiveMode } from "./commands/interactive.js";
 import { serviceAccountCommand } from "./commands/service-account.js";
+import { chatCommand } from "./commands/chat.js";
+import { previewCommand } from "./commands/preview.js";
+import { initCommand } from "./commands/init.js";
+
+// Read version from package.json
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json");
 
 const program = new Command();
 
 program
   .name("husky")
   .description("CLI for Huskyv0 Task Orchestration with Claude Agent")
-  .version("0.9.5")
+  .version(packageJson.version)
   .option("--llm", "Output LLM reference documentation (markdown)");
 
 program.addCommand(taskCommand);
@@ -44,7 +53,6 @@ program.addCommand(projectCommand);
 program.addCommand(ideaCommand);
 program.addCommand(departmentCommand);
 program.addCommand(workflowCommand);
-program.addCommand(julesCommand);
 program.addCommand(vmCommand);
 program.addCommand(vmConfigCommand);
 program.addCommand(processCommand);
@@ -54,9 +62,12 @@ program.addCommand(completionCommand);
 program.addCommand(worktreeCommand);
 program.addCommand(workerCommand);
 program.addCommand(bizCommand);
-program.addCommand(servicesCommand);
 program.addCommand(serviceAccountCommand);
+program.addCommand(chatCommand);
+program.addCommand(previewCommand);
 program.addCommand(llmCommand);
+program.addCommand(initCommand);
+program.addCommand(agentMsgCommand);
 
 // Handle --llm flag specially
 if (process.argv.includes("--llm")) {

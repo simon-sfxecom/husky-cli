@@ -6,6 +6,7 @@ import {
   submitPlan,
   waitForApproval,
 } from "../lib/streaming.js";
+import { getConfig } from "./config.js";
 
 interface AgentOptions {
   sessionId: string;
@@ -17,6 +18,23 @@ interface AgentOptions {
   githubToken?: string;
   timeout?: number;
   maxBudget?: number;
+}
+
+// Agent registration and messaging types
+type AgentRole = "supervisor" | "worker" | "reviewer" | "support";
+type AgentStatus = "online" | "offline" | "busy";
+
+interface RegisteredAgent {
+  id: string;
+  name: string;
+  role: AgentRole;
+  emoji: string;
+  tmuxSession?: string;
+  vmName?: string;
+  status: AgentStatus;
+  lastHeartbeat?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ============================================
@@ -419,3 +437,311 @@ function parsePlanFromOutput(output: string): {
     estimatedRuntime: 5, // 5 minutes placeholder
   };
 }
+
+// ============================================
+// AGENT-TO-AGENT MESSAGING COMMANDS
+// ============================================
+
+// Role to emoji mapping for formatted messages
+const ROLE_EMOJI: Record<AgentRole, string> = {
+  supervisor: "\uD83D\uDC15", // Dog emoji for supervisor
+  worker: "\uD83D\uDD27",     // Wrench emoji for worker
+  reviewer: "\uD83D\uDCDD",   // Memo emoji for reviewer
+  support: "\uD83C\uDFA7",    // Headphones emoji for support
+};
+
+// husky agent message
+agentCommand
+  .command("message")
+  .alias("msg")
+  .description("Send message to another agent")
+  .requiredOption("--to <agent>", "Target agent ID (supervisor, worker-1, reviewer, etc.)")
+  .option("--from <agent>", "Sender agent ID (default: from HUSKY_AGENT_ID env)")
+  .argument("<message>", "Message to send")
+  .action(async (message: string, options: { to: string; from?: string }) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+      process.exit(1);
+    }
+
+    const senderId = options.from || process.env.HUSKY_AGENT_ID;
+    if (!senderId) {
+      console.error("Error: Sender agent ID not specified.");
+      console.error("  Either use --from <agent-id> or set HUSKY_AGENT_ID environment variable.");
+      process.exit(1);
+    }
+
+    const targetId = options.to;
+
+    try {
+      // 1. Lookup sender agent
+      const senderRes = await fetch(`${config.apiUrl}/api/agents/${senderId}`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!senderRes.ok) {
+        if (senderRes.status === 404) {
+          console.error(`Error: Sender agent '${senderId}' not found.`);
+          console.error("  Register first with: husky agent register --id <id> --name <name> --role <role>");
+        } else {
+          console.error(`Error fetching sender agent: ${senderRes.status}`);
+        }
+        process.exit(1);
+      }
+
+      const sender = (await senderRes.json()) as RegisteredAgent;
+
+      // 2. Lookup target agent
+      const targetRes = await fetch(`${config.apiUrl}/api/agents/${targetId}`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!targetRes.ok) {
+        if (targetRes.status === 404) {
+          console.error(`Error: Target agent '${targetId}' not found.`);
+          console.error("  Available agents: husky agent list");
+        } else {
+          console.error(`Error fetching target agent: ${targetRes.status}`);
+        }
+        process.exit(1);
+      }
+
+      const target = (await targetRes.json()) as RegisteredAgent;
+
+      // 3. Format the message with emojis
+      const senderEmoji = sender.emoji || ROLE_EMOJI[sender.role] || "\uD83E\uDD16";
+      const targetEmoji = target.emoji || ROLE_EMOJI[target.role] || "\uD83E\uDD16";
+      const formattedMessage = `[${senderEmoji} ${sender.name} -> ${targetEmoji} ${target.name}]\n${message}`;
+
+      // 4. Send the message via API
+      const sendRes = await fetch(`${config.apiUrl}/api/agents/${targetId}/message`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          from: senderId,
+          message,
+          formatted: formattedMessage,
+        }),
+      });
+
+      if (!sendRes.ok) {
+        const error = await sendRes.text();
+        console.error(`Error sending message: ${sendRes.status} - ${error}`);
+        process.exit(1);
+      }
+
+      const result = (await sendRes.json()) as {
+        ok: boolean;
+        messageId: string;
+        deliveredTo: string;
+        queuedAt: string;
+      };
+
+      if (result.ok) {
+        console.log(`Message queued for ${target.name} (id: ${result.messageId})`);
+        console.log(`  Delivery via supervisor-bridge to tmux session: ${target.tmuxSession || targetId}`);
+      } else {
+        console.log(`Message delivery uncertain for ${target.name}`);
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      process.exit(1);
+    }
+  });
+
+// husky agent register
+agentCommand
+  .command("register")
+  .description("Register this agent with the platform")
+  .requiredOption("--id <id>", "Agent ID")
+  .requiredOption("--name <name>", "Agent display name")
+  .requiredOption("--role <role>", "Agent role (supervisor, worker, reviewer, support)")
+  .option("--emoji <emoji>", "Agent emoji", "\uD83E\uDD16")
+  .option("--tmux <session>", "tmux session name")
+  .option("--vm <vmName>", "VM name")
+  .action(async (options: {
+    id: string;
+    name: string;
+    role: string;
+    emoji: string;
+    tmux?: string;
+    vm?: string;
+  }) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+      process.exit(1);
+    }
+
+    // Validate role
+    const validRoles: AgentRole[] = ["supervisor", "worker", "reviewer", "support"];
+    if (!validRoles.includes(options.role as AgentRole)) {
+      console.error(`Error: Invalid role '${options.role}'.`);
+      console.error(`  Valid roles: ${validRoles.join(", ")}`);
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/agents/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          id: options.id,
+          name: options.name,
+          role: options.role,
+          emoji: options.emoji,
+          tmuxSession: options.tmux,
+          vmName: options.vm,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        console.error(`Error registering agent: ${res.status} - ${error}`);
+        process.exit(1);
+      }
+
+      const agent = (await res.json()) as RegisteredAgent;
+
+      console.log("\n  Agent Registered");
+      console.log("  " + "-".repeat(40));
+      console.log(`  ID:     ${agent.id}`);
+      console.log(`  Name:   ${agent.emoji} ${agent.name}`);
+      console.log(`  Role:   ${agent.role}`);
+      if (agent.tmuxSession) {
+        console.log(`  Tmux:   ${agent.tmuxSession}`);
+      }
+      if (agent.vmName) {
+        console.log(`  VM:     ${agent.vmName}`);
+      }
+      console.log("");
+      console.log("  Set HUSKY_AGENT_ID to use this agent:");
+      console.log(`  export HUSKY_AGENT_ID="${agent.id}"`);
+      console.log("");
+    } catch (error) {
+      console.error("Error registering agent:", error);
+      process.exit(1);
+    }
+  });
+
+// husky agent list
+agentCommand
+  .command("list")
+  .description("List all registered agents")
+  .option("--status <status>", "Filter by status (online, offline, busy)")
+  .option("--role <role>", "Filter by role (supervisor, worker, reviewer, support)")
+  .option("--json", "Output as JSON")
+  .action(async (options: { status?: string; role?: string; json?: boolean }) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+      process.exit(1);
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (options.status) params.set("status", options.status);
+      if (options.role) params.set("role", options.role);
+
+      const res = await fetch(`${config.apiUrl}/api/agents?${params}`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const data = (await res.json()) as { agents: RegisteredAgent[] };
+      const agents = data.agents || [];
+
+      if (options.json) {
+        console.log(JSON.stringify(agents, null, 2));
+        return;
+      }
+
+      if (agents.length === 0) {
+        console.log("No agents registered.");
+        console.log("\nRegister an agent with:");
+        console.log("  husky agent register --id <id> --name <name> --role <role>");
+        return;
+      }
+
+      console.log("\n  Registered Agents");
+      console.log("  " + "-".repeat(60));
+
+      for (const agent of agents) {
+        const statusIcon = agent.status === "online" ? "\u2714" :
+                          agent.status === "busy" ? "\u231B" : "\u2717";
+        const lastSeen = agent.lastHeartbeat
+          ? new Date(agent.lastHeartbeat).toLocaleString()
+          : "never";
+
+        console.log(`  ${statusIcon} ${agent.emoji} ${agent.name} (${agent.id})`);
+        console.log(`      Role: ${agent.role} | Status: ${agent.status} | Last seen: ${lastSeen}`);
+        if (agent.tmuxSession) {
+          console.log(`      Tmux: ${agent.tmuxSession}`);
+        }
+        if (agent.vmName) {
+          console.log(`      VM: ${agent.vmName}`);
+        }
+        console.log("");
+      }
+    } catch (error) {
+      console.error("Error fetching agents:", error);
+      process.exit(1);
+    }
+  });
+
+// husky agent heartbeat
+agentCommand
+  .command("heartbeat")
+  .description("Send heartbeat to mark agent as online")
+  .option("--id <id>", "Agent ID (default: from HUSKY_AGENT_ID env)")
+  .action(async (options: { id?: string }) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+      process.exit(1);
+    }
+
+    const agentId = options.id || process.env.HUSKY_AGENT_ID;
+    if (!agentId) {
+      console.error("Error: Agent ID not specified.");
+      console.error("  Either use --id <agent-id> or set HUSKY_AGENT_ID environment variable.");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/agents/${agentId}/heartbeat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error(`Error: Agent '${agentId}' not found.`);
+          console.error("  Register first with: husky agent register --id <id> --name <name> --role <role>");
+        } else {
+          const error = await res.text();
+          console.error(`Error sending heartbeat: ${res.status} - ${error}`);
+        }
+        process.exit(1);
+      }
+
+      const result = (await res.json()) as { status: AgentStatus; lastHeartbeat: string };
+      console.log(`Heartbeat sent. Agent '${agentId}' is now ${result.status}.`);
+    } catch (error) {
+      console.error("Error sending heartbeat:", error);
+      process.exit(1);
+    }
+  });

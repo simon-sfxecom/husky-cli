@@ -22,7 +22,6 @@ const COMMANDS: Record<string, string[]> = {
   idea: ["list", "create", "get", "update", "delete", "convert"],
   department: ["list", "create", "get", "update", "delete"],
   vm: ["list", "create", "get", "update", "delete", "start", "stop", "logs", "approve", "reject"],
-  jules: ["list", "create", "get", "update", "delete", "message", "approve", "activities", "sources"],
   process: ["list", "create", "get", "update", "delete"],
   strategy: [
     "show", "set-vision", "set-mission", "add-value", "update-value", "delete-value",
@@ -146,7 +145,7 @@ ${subcommandCases}
       return 0
       ;;
     --agent)
-      COMPREPLY=( $(compgen -W "claude-code gemini-cli aider custom" -- \${cur}) )
+      COMPREPLY=( $(compgen -W "claude-code gemini-cli custom" -- \${cur}) )
       return 0
       ;;
     --type)
@@ -207,7 +206,6 @@ _husky() {
     'idea:Manage ideas'
     'department:Manage departments'
     'vm:Manage VM sessions'
-    'jules:Manage Jules AI coding sessions'
     'process:Manage processes'
     'strategy:Manage business strategy'
     'settings:Manage application settings'
@@ -289,7 +287,7 @@ complete -c husky -l project -d "Project ID" -r
 complete -c husky -l status -d "Filter by status" -r -a "backlog in_progress review done pending running completed failed"
 complete -c husky -l priority -d "Priority level" -r -a "low medium high urgent must should could wont"
 complete -c husky -l assignee -d "Assignee type" -r -a "human llm unassigned"
-complete -c husky -l agent -d "Agent type" -r -a "claude-code gemini-cli aider custom"
+complete -c husky -l agent -d "Agent type" -r -a "claude-code gemini-cli custom"
 complete -c husky -l type -d "Type filter" -r -a "global project architecture patterns decisions learnings"
 complete -c husky -l value-stream -d "Value stream" -r -a "order_to_delivery procure_to_pay returns_management product_lifecycle customer_service marketing_sales finance_accounting hr_operations it_operations general"
 complete -c husky -l action -d "Action type" -r -a "manual semi_automated fully_automated"
@@ -306,7 +304,6 @@ function getCommandDescription(cmd: string): string {
     idea: "Manage ideas",
     department: "Manage departments",
     vm: "Manage VM sessions",
-    jules: "Manage Jules AI coding sessions",
     process: "Manage processes",
     strategy: "Manage business strategy",
     settings: "Manage application settings",
@@ -377,12 +374,6 @@ function getSubcommandDescription(cmd: string, sub: string): string {
       logs: "Get VM logs",
       approve: "Approve VM session plan",
       reject: "Reject VM session plan",
-    },
-    jules: {
-      message: "Send a message to a Jules session",
-      approve: "Approve a Jules session plan",
-      activities: "Get session activities",
-      sources: "List available Jules sources",
     },
     strategy: {
       "set-vision": "Set/update the company vision",

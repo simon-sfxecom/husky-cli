@@ -1,5 +1,6 @@
 import { select, input, confirm } from "@inquirer/prompts";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
+import { resolveProject } from "../../lib/project-resolver.js";
 
 interface Task {
   id: string;
@@ -189,7 +190,6 @@ async function createTask(config: ValidConfig): Promise<void> {
       default: "medium",
     });
 
-    // Optional: Link to project
     const projects = await fetchProjects(config);
     let projectId: string | undefined;
 
@@ -200,8 +200,54 @@ async function createTask(config: ValidConfig): Promise<void> {
       });
 
       if (linkToProject) {
-        const projectChoices = projects.map((p) => ({ name: p.name, value: p.id }));
-        projectId = await select({ message: "Select project:", choices: projectChoices });
+        const selectionMethod = await select({
+          message: "How to select project?",
+          choices: [
+            { name: "Choose from list", value: "list" },
+            { name: "Type project name", value: "type" },
+          ],
+        });
+
+        if (selectionMethod === "list") {
+          const projectChoices = projects.map((p) => ({ name: p.name, value: p.id }));
+          projectId = await select({ message: "Select project:", choices: projectChoices });
+        } else {
+          const projectInput = await input({
+            message: "Project name or ID:",
+            validate: (value) => (value.length > 0 ? true : "Project name required"),
+          });
+
+          const resolved = await resolveProject(projectInput, config);
+
+          if (!resolved) {
+            console.log(`\n  ❌ Project "${projectInput}" not found.`);
+            console.log("  Available projects:");
+            for (const p of projects) {
+              console.log(`    - ${p.name}`);
+            }
+            console.log("");
+            await pressEnterToContinue();
+            return;
+          }
+
+          if (resolved.resolvedBy === "fuzzy-match") {
+            const confirmFuzzy = await confirm({
+              message: `Did you mean "${resolved.projectName}"? (${Math.round(resolved.confidence * 100)}% match)`,
+              default: true,
+            });
+            if (!confirmFuzzy) {
+              console.log("\n  Cancelled.\n");
+              await pressEnterToContinue();
+              return;
+            }
+          }
+
+          if (resolved.resolvedBy !== "exact-id") {
+            console.log(`  ℹ️  Resolved to: ${resolved.projectName}`);
+          }
+
+          projectId = resolved.projectId;
+        }
       }
     }
 
@@ -293,16 +339,64 @@ async function updateTask(config: ValidConfig): Promise<void> {
         });
         break;
       case "project":
-        const projects = await fetchProjects(config);
-        if (projects.length === 0) {
+        const projectsForUpdate = await fetchProjects(config);
+        if (projectsForUpdate.length === 0) {
           console.log("\n  No projects available.\n");
           await pressEnterToContinue();
           return;
         }
-        const projectChoices = projects.map((p) => ({ name: p.name, value: p.id }));
-        projectChoices.push({ name: "Remove project link", value: "__none__" });
-        const projectId = await select({ message: "Select project:", choices: projectChoices });
-        updateData.projectId = projectId === "__none__" ? "" : projectId;
+
+        const projectSelectionMethod = await select({
+          message: "How to select project?",
+          choices: [
+            { name: "Choose from list", value: "list" },
+            { name: "Type project name", value: "type" },
+            { name: "Remove project link", value: "remove" },
+          ],
+        });
+
+        if (projectSelectionMethod === "remove") {
+          updateData.projectId = "";
+        } else if (projectSelectionMethod === "list") {
+          const projectChoicesForUpdate = projectsForUpdate.map((p) => ({ name: p.name, value: p.id }));
+          updateData.projectId = await select({ message: "Select project:", choices: projectChoicesForUpdate });
+        } else {
+          const projectInputForUpdate = await input({
+            message: "Project name or ID:",
+            validate: (value) => (value.length > 0 ? true : "Project name required"),
+          });
+
+          const resolvedForUpdate = await resolveProject(projectInputForUpdate, config);
+
+          if (!resolvedForUpdate) {
+            console.log(`\n  ❌ Project "${projectInputForUpdate}" not found.`);
+            console.log("  Available projects:");
+            for (const p of projectsForUpdate) {
+              console.log(`    - ${p.name}`);
+            }
+            console.log("");
+            await pressEnterToContinue();
+            return;
+          }
+
+          if (resolvedForUpdate.resolvedBy === "fuzzy-match") {
+            const confirmFuzzyUpdate = await confirm({
+              message: `Did you mean "${resolvedForUpdate.projectName}"? (${Math.round(resolvedForUpdate.confidence * 100)}% match)`,
+              default: true,
+            });
+            if (!confirmFuzzyUpdate) {
+              console.log("\n  Cancelled.\n");
+              await pressEnterToContinue();
+              return;
+            }
+          }
+
+          if (resolvedForUpdate.resolvedBy !== "exact-id") {
+            console.log(`  ℹ️  Resolved to: ${resolvedForUpdate.projectName}`);
+          }
+
+          updateData.projectId = resolvedForUpdate.projectId;
+        }
         break;
       case "title":
         updateData.title = await input({

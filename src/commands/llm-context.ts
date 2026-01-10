@@ -1,12 +1,10 @@
-/**
- * LLM Context Generator
- * Outputs markdown reference for LLM agents
- */
+import { createRequire } from "module";
 
-const VERSION = "0.9.7";
+const require = createRequire(import.meta.url);
+const packageJson = require("../../package.json");
 
 export function generateLLMContext(): string {
-    return `# Husky CLI Reference (v${VERSION})
+    return `# Husky CLI Reference (v${packageJson.version})
 
 > [!CAUTION]
 > ## MANDATORY: You MUST Use Husky CLI
@@ -15,6 +13,7 @@ export function generateLLMContext(): string {
 > 
 > **DO NOT:**
 > - Make direct API calls to Billbee, Zendesk, or other services
+> - Make direct API calls to husky-api (use CLI instead)
 > - Bypass Husky CLI for task management
 > - Create custom integrations when Husky commands exist
 > 
@@ -22,6 +21,7 @@ export function generateLLMContext(): string {
 > - Use \`husky biz\` commands for business operations
 > - Use \`husky task\` commands for task lifecycle
 > - Use \`husky worktree\` for Git isolation
+> - Use \`husky chat\` commands for Google Chat communication
 > - Check \`husky config test\` before operations
 
 ---
@@ -148,14 +148,6 @@ husky vm ssh <id>                       # SSH into VM
 husky vm delete <id>                    # Delete VM
 \`\`\`
 
-### Jules Sessions (AI Agent)
-\`\`\`bash
-husky jules list                        # List Jules sessions
-husky jules create                      # Create new session
-husky jules status <id>                 # Get session status
-husky jules logs <id>                   # View session logs
-\`\`\`
-
 ### Workers (Multi-Agent Coordination)
 \`\`\`bash
 husky worker whoami                     # Show current worker identity
@@ -163,6 +155,31 @@ husky worker register                   # Register worker with API
 husky worker list                       # List all workers
 husky worker sessions                   # List active sessions
 husky worker activity                   # Who is working on what
+\`\`\`
+
+### Chat (Google Chat Integration)
+\`\`\`bash
+husky chat reply-chat --space <space-id> "<message>"  # Send message to Google Chat
+husky chat inbox                        # Get messages from Google Chat
+husky chat inbox --unread               # Only unread messages
+husky chat pending                      # Get pending messages from user
+husky chat send "<message>"             # Send message as supervisor
+husky chat reply <messageId> "<response>"  # Reply to specific message
+husky chat review "<question>"          # Request human review via Google Chat
+husky chat review-status <reviewId>     # Check review status
+husky chat watch                        # Watch for new messages (blocking)
+\`\`\`
+
+### Agent Messaging (agent-to-agent communication)
+\`\`\`bash
+husky agent-msg send --type <type> --title "<title>"  # Send message (types: approval_request, status_update, error_report, completion, query)
+husky agent-msg list                    # List messages
+husky agent-msg list --status pending   # Filter by status
+husky agent-msg pending                 # List pending messages (for supervisor)
+husky agent-msg respond <id> --approve  # Approve request
+husky agent-msg respond <id> --reject   # Reject request
+husky agent-msg get <id>                # Get message details
+husky agent-msg wait <id>               # Wait for response (blocking)
 \`\`\`
 
 ### Utility Commands

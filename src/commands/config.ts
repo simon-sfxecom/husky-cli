@@ -6,11 +6,18 @@ import { homedir } from "os";
 const CONFIG_DIR = join(homedir(), ".husky");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
+// Agent roles for RBAC (must match dashboard types)
+type AgentRole = "supervisor" | "worker" | "reviewer" | "e2e_agent" | "pr_agent" | "support";
+
 interface Config {
   apiUrl?: string;
   apiKey?: string;
   workerId?: string;
   workerName?: string;
+  // RBAC (cached from /api/auth/whoami)
+  role?: AgentRole;
+  permissions?: string[];
+  roleLastChecked?: string; // ISO date
   // Billbee
   billbeeApiKey?: string;
   billbeeUsername?: string;
@@ -29,6 +36,9 @@ interface Config {
   // GCP (Vertex AI)
   gcpProjectId?: string;
   gcpLocation?: string;
+  // Gotess
+  gotessToken?: string;
+  gotessBookId?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -75,10 +85,93 @@ function saveConfig(config: Config): void {
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
+/**
+ * Fetch role and permissions from /api/auth/whoami
+ * Caches the result in config for 1 hour
+ */
+export async function fetchAndCacheRole(): Promise<{ role?: AgentRole; permissions?: string[] }> {
+  const config = getConfig();
+
+  // Check if we have cached role that's less than 1 hour old
+  if (config.role && config.roleLastChecked) {
+    const lastChecked = new Date(config.roleLastChecked);
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    if (lastChecked > oneHourAgo) {
+      return { role: config.role, permissions: config.permissions };
+    }
+  }
+
+  // Fetch fresh role/permissions
+  if (!config.apiUrl || !config.apiKey) {
+    return {};
+  }
+
+  try {
+    const url = new URL("/api/auth/whoami", config.apiUrl);
+    const res = await fetch(url.toString(), {
+      headers: { "x-api-key": config.apiKey },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      // Update config cache
+      config.role = data.role;
+      config.permissions = data.permissions;
+      config.roleLastChecked = new Date().toISOString();
+      saveConfig(config);
+      return { role: data.role, permissions: data.permissions };
+    }
+  } catch {
+    // Ignore fetch errors, return cached or empty
+  }
+
+  return { role: config.role, permissions: config.permissions };
+}
+
+/**
+ * Check if current config has a specific permission
+ */
+export function hasPermission(permission: string): boolean {
+  const config = getConfig();
+  if (!config.permissions) return false;
+
+  // Direct match
+  if (config.permissions.includes(permission)) return true;
+
+  // Wildcard match (e.g., "task:*" matches "task:read")
+  const [resource] = permission.split(":");
+  if (config.permissions.includes(`${resource}:*`)) return true;
+
+  return false;
+}
+
+/**
+ * Get current role from config (may be undefined if not fetched)
+ */
+export function getRole(): AgentRole | undefined {
+  return getConfig().role;
+}
+
+/**
+ * Clear the role cache to force a refresh on next fetchAndCacheRole call
+ */
+export function clearRoleCache(): void {
+  const config = getConfig();
+  delete config.roleLastChecked;
+  saveConfig(config);
+}
+
 // Helper to set a single config value (used by interactive mode and worker identity)
 export function setConfig(key: "apiUrl" | "apiKey" | "workerId" | "workerName", value: string): void {
   const config = getConfig();
   config[key] = value;
+  saveConfig(config);
+}
+
+export function setGotessConfig(token: string, bookId: string): void {
+  const config = getConfig();
+  config.gotessToken = token;
+  config.gotessBookId = bookId;
   saveConfig(config);
 }
 
@@ -114,6 +207,8 @@ configCommand
       // GCP
       "gcp-project-id": "gcpProjectId",
       "gcp-location": "gcpLocation",
+      "gotess-token": "gotessToken",
+      "gotess-book-id": "gotessBookId",
     };
 
     const configKey = keyMappings[key];
@@ -126,6 +221,7 @@ configCommand
       console.log("  SeaTable: seatable-api-token, seatable-server-url");
       console.log("  Qdrant:   qdrant-url, qdrant-api-key");
       console.log("  GCP:      gcp-project-id, gcp-location");
+      console.log("  Gotess:   gotess-token, gotess-book-id");
       process.exit(1);
     }
 
@@ -143,7 +239,7 @@ configCommand
     saveConfig(config);
 
     // Mask sensitive values in output
-    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token"];
+    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token"];
     const displayValue = sensitiveKeys.includes(key) ? "***" : value;
     console.log(`✓ Set ${key} = ${displayValue}`);
   });
@@ -196,34 +292,52 @@ configCommand
     console.log("Testing API connection...");
 
     try {
-      const url = new URL("/api/tasks", config.apiUrl);
-      const res = await fetch(url.toString(), {
-        headers: {
-          "x-api-key": config.apiKey,
-        },
+      // First test basic connectivity with /api/tasks
+      const tasksUrl = new URL("/api/tasks", config.apiUrl);
+      const tasksRes = await fetch(tasksUrl.toString(), {
+        headers: { "x-api-key": config.apiKey },
       });
 
-      if (res.ok) {
-        console.log(`API connection successful (API URL: ${config.apiUrl})`);
-      } else if (res.status === 401) {
-        console.error(`API connection failed: Unauthorized (HTTP 401)`);
-        console.error("  Check your API key with: husky config set api-key <key>");
-        process.exit(1);
-      } else if (res.status === 403) {
-        console.error(`API connection failed: Forbidden (HTTP 403)`);
-        console.error("  Your API key may not have the required permissions");
-        process.exit(1);
-      } else {
-        console.error(`API connection failed: HTTP ${res.status}`);
-        try {
-          const body = await res.json();
-          if (body.error) {
-            console.error(`  Error: ${body.error}`);
-          }
-        } catch {
-          // Ignore JSON parse errors
+      if (!tasksRes.ok) {
+        if (tasksRes.status === 401) {
+          console.error(`API connection failed: Unauthorized (HTTP 401)`);
+          console.error("  Check your API key with: husky config set api-key <key>");
+          process.exit(1);
+        } else if (tasksRes.status === 403) {
+          console.error(`API connection failed: Forbidden (HTTP 403)`);
+          console.error("  Your API key may not have the required permissions");
+          process.exit(1);
+        } else {
+          console.error(`API connection failed: HTTP ${tasksRes.status}`);
+          process.exit(1);
         }
-        process.exit(1);
+      }
+
+      console.log(`API connection successful (API URL: ${config.apiUrl})`);
+
+      // Now fetch role/permissions from whoami
+      const whoamiUrl = new URL("/api/auth/whoami", config.apiUrl);
+      const whoamiRes = await fetch(whoamiUrl.toString(), {
+        headers: { "x-api-key": config.apiKey },
+      });
+
+      if (whoamiRes.ok) {
+        const data = await whoamiRes.json();
+        // Cache the role/permissions
+        const updatedConfig = getConfig();
+        updatedConfig.role = data.role;
+        updatedConfig.permissions = data.permissions;
+        updatedConfig.roleLastChecked = new Date().toISOString();
+        saveConfig(updatedConfig);
+
+        console.log(`\nRBAC Info:`);
+        console.log(`  Role: ${data.role || "(not assigned)"}`);
+        if (data.permissions && data.permissions.length > 0) {
+          console.log(`  Permissions: ${data.permissions.join(", ")}`);
+        }
+        if (data.agentId) {
+          console.log(`  Agent ID: ${data.agentId}`);
+        }
       }
     } catch (error) {
       if (error instanceof TypeError && error.message.includes("fetch")) {
