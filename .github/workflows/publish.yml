@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Required for npm OIDC/provenance
 
     steps:
       - name: Checkout
@@ -41,6 +40,8 @@ jobs:
             echo "Version $PACKAGE_VERSION already published"
           fi
 
-      - name: Publish to npm with OIDC
+      - name: Publish to npm
         if: steps.version.outputs.should_publish == 'true'
-        run: npm publish --provenance --access public
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
