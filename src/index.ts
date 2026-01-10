@@ -30,6 +30,7 @@ import { serviceAccountCommand } from "./commands/service-account.js";
 import { chatCommand } from "./commands/chat.js";
 import { previewCommand } from "./commands/preview.js";
 import { initCommand } from "./commands/init.js";
+import { brainCommand } from "./commands/brain.js";
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -68,6 +69,7 @@ program.addCommand(previewCommand);
 program.addCommand(llmCommand);
 program.addCommand(initCommand);
 program.addCommand(agentMsgCommand);
+program.addCommand(brainCommand);
 
 // Handle --llm flag specially
 if (process.argv.includes("--llm")) {

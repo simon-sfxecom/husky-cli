@@ -44,7 +44,7 @@ export class EmbeddingService {
         const config = getConfig();
 
         const embeddingConfig: EmbeddingConfig = {
-            projectId: config.gcpProjectId || process.env.GOOGLE_PROJECT_ID || process.env.GCP_PROJECT_ID || '',
+            projectId: config.gcpProjectId || process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_PROJECT_ID || process.env.GCP_PROJECT_ID || '',
             location: config.gcpLocation || process.env.GOOGLE_LOCATION || 'europe-west1',
             model: process.env.EMBEDDING_MODEL || EMBEDDING_MODELS.TEXT_EMBEDDING_004,
         };
