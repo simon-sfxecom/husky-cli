@@ -11,10 +11,30 @@ workerCommand
   .description("Show current worker identity")
   .option("--json", "Output as JSON")
   .action(async (options) => {
+    const config = getConfig();
     const identity = getWorkerIdentity();
 
+    // Fetch role from API
+    let role = "unknown";
+    let permissions: string[] = [];
+
+    if (config.apiUrl && config.apiKey) {
+      try {
+        const res = await fetch(`${config.apiUrl}/api/auth/whoami`, {
+          headers: { "x-api-key": config.apiKey },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          role = data.role || "unknown";
+          permissions = data.permissions || [];
+        }
+      } catch {
+        // Silently fail - role will show as "unknown"
+      }
+    }
+
     if (options.json) {
-      console.log(JSON.stringify(identity, null, 2));
+      console.log(JSON.stringify({ ...identity, role, permissions }, null, 2));
     } else {
       console.log("\n  Worker Identity");
       console.log("  " + "─".repeat(40));
@@ -24,6 +44,11 @@ workerCommand
       console.log(`  User:     ${identity.username}`);
       console.log(`  Platform: ${identity.platform}`);
       console.log(`  Version:  ${identity.agentVersion}`);
+      console.log("  " + "─".repeat(40));
+      console.log(`  Role:     ${role}`);
+      if (permissions.length > 0) {
+        console.log(`  Perms:    ${permissions.join(", ")}`);
+      }
       console.log("");
     }
   });
