@@ -141,22 +141,57 @@ ticketsCommand
     .description("Update ticket properties")
     .option("--status <status>", "New status (open, pending, solved)")
     .option("--priority <priority>", "New priority (low, normal, high, urgent)")
+    .option("-f, --field <field...>", "Set custom field (format: field_id=value or name=value)")
+    .option("--json", "Output as JSON")
     .action(async (id, options) => {
         try {
             const client = ZendeskClient.fromConfig();
 
-            const updates: { status?: string; priority?: string } = {};
+            const updates: { status?: string; priority?: string; custom_fields?: Array<{id: number; value: string | boolean | number | null}> } = {};
             if (options.status) updates.status = options.status;
             if (options.priority) updates.priority = options.priority;
 
+            if (options.field && options.field.length > 0) {
+                updates.custom_fields = options.field.map((f: string) => {
+                    const [key, ...valueParts] = f.split("=");
+                    const value = valueParts.join("=");
+                    const fieldId = parseInt(key, 10);
+                    
+                    if (isNaN(fieldId)) {
+                        throw new Error(`Invalid field ID: ${key}. Use numeric field ID (e.g., 28080124674706=value)`);
+                    }
+                    
+                    if (value === "true") return { id: fieldId, value: true };
+                    if (value === "false") return { id: fieldId, value: false };
+                    if (value === "null" || value === "") return { id: fieldId, value: null };
+                    
+                    const numValue = parseInt(value, 10);
+                    if (!isNaN(numValue) && String(numValue) === value) {
+                        return { id: fieldId, value: numValue };
+                    }
+                    
+                    return { id: fieldId, value };
+                });
+            }
+
             if (Object.keys(updates).length === 0) {
-                console.error("Error: Provide --status or --priority");
+                console.error("Error: Provide --status, --priority, or --field");
                 process.exit(1);
             }
 
             const ticket = await client.updateTicket(parseInt(id, 10), updates);
+            
+            if (options.json) {
+                console.log(JSON.stringify(ticket, null, 2));
+                return;
+            }
+            
             console.log(`✓ Updated ticket #${ticket.id}`);
             console.log(`  Status: ${ticket.status}, Priority: ${ticket.priority || "normal"}`);
+            
+            if (updates.custom_fields) {
+                console.log(`  Custom fields updated: ${updates.custom_fields.length}`);
+            }
         } catch (error) {
             console.error("Error:", (error as Error).message);
             process.exit(1);
