@@ -31,6 +31,7 @@ import { chatCommand } from "./commands/chat.js";
 import { previewCommand } from "./commands/preview.js";
 import { initCommand } from "./commands/init.js";
 import { brainCommand } from "./commands/brain.js";
+import { mermaidCommand } from "./commands/mermaid.js";
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -70,6 +71,7 @@ program.addCommand(llmCommand);
 program.addCommand(initCommand);
 program.addCommand(agentMsgCommand);
 program.addCommand(brainCommand);
+program.addCommand(mermaidCommand);
 
 // Handle --llm flag specially
 if (process.argv.includes("--llm")) {
