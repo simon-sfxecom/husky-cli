@@ -61,11 +61,11 @@ interface WorkflowWithSteps extends Workflow {
   steps?: WorkflowStep[];
 }
 
-// husky workflow list
 workflowCommand
   .command("list")
   .description("List all workflows")
   .option("--value-stream <valueStream>", "Filter by value stream")
+  .option("-l, --limit <num>", "Max results")
   .option("--json", "Output as JSON")
   .action(async (options) => {
     const config = ensureConfig();
@@ -84,7 +84,11 @@ workflowCommand
         throw new Error(`API error: ${res.status}`);
       }
 
-      const workflows: Workflow[] = await res.json();
+      let workflows: Workflow[] = await res.json();
+
+      if (options.limit) {
+        workflows = workflows.slice(0, parseInt(options.limit, 10));
+      }
 
       if (options.json) {
         console.log(JSON.stringify(workflows, null, 2));

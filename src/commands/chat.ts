@@ -983,6 +983,72 @@ chatCommand
   });
 
 // ============================================
+// GOOGLE CHAT SPACES
+// ============================================
+
+chatCommand
+  .command("spaces")
+  .description("List available Google Chat spaces")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    const config = getConfig();
+    const huskyApiUrl = getHuskyApiUrl();
+    if (!huskyApiUrl) {
+      console.error("Error: API URL not configured. Set husky-api-url or api-url.");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${huskyApiUrl}/api/google-chat/spaces`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const data = await res.json() as {
+        spaces: Array<{
+          name: string;
+          displayName: string;
+          type: string;
+          singleUserBotDm: boolean;
+        }>;
+        defaultSpace?: string;
+      };
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
+
+      if (!data.spaces || data.spaces.length === 0) {
+        console.log("No Google Chat spaces found.");
+        console.log("Make sure the Husky bot is added to at least one space.");
+        return;
+      }
+
+      console.log("\n  Google Chat Spaces");
+      console.log("  " + "─".repeat(60));
+
+      for (const space of data.spaces) {
+        const isDefault = space.name === data.defaultSpace ? " (default)" : "";
+        const typeIcon = space.type === "SPACE" ? "🏠" : space.type === "GROUP_CHAT" ? "👥" : "💬";
+        console.log(`  ${typeIcon} ${space.displayName || "(unnamed)"}${isDefault}`);
+        console.log(`     ID: ${space.name}`);
+        console.log("");
+      }
+
+      console.log("  Use --space <ID> with chat commands, e.g.:");
+      console.log(`  husky chat ask --space "${data.spaces[0]?.name}" "Your question"`);
+      console.log("");
+    } catch (error) {
+      console.error("Error fetching spaces:", error);
+      process.exit(1);
+    }
+  });
+
+// ============================================
 // REVIEW COMMANDS (kept for backwards compatibility)
 // ============================================
 

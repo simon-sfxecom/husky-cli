@@ -236,6 +236,33 @@ export class QdrantClient {
         const info = await this.getCollection(collectionName);
         return info.pointsCount;
     }
+
+    async scroll(
+        collectionName: string,
+        options: {
+            filter?: Record<string, unknown>;
+            limit?: number;
+            with_payload?: boolean;
+        } = {}
+    ): Promise<Array<{ id: string | number; payload: Record<string, unknown> }>> {
+        const response = await this.request<{
+            result: {
+                points: Array<{ id: string | number; payload?: Record<string, unknown> }>;
+            };
+        }>(`/collections/${collectionName}/points/scroll`, {
+            method: 'POST',
+            body: JSON.stringify({
+                filter: options.filter,
+                limit: options.limit || 50,
+                with_payload: options.with_payload ?? true,
+            }),
+        });
+
+        return response.result.points.map(p => ({
+            id: p.id,
+            payload: p.payload || {},
+        }));
+    }
 }
 
 export default QdrantClient;
