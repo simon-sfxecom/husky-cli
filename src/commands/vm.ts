@@ -117,7 +117,7 @@ type VMSessionStatus =
   | "preempted"
   | "rejected";
 
-type VMAgentType = "claude-code" | "gemini-cli" | "custom";
+type VMAgentType = "claude-code" | "gemini-cli" | "opencode" | "custom";
 
 interface VMSession {
   id: string;
@@ -168,7 +168,7 @@ vmCommand
   )
   .option(
     "--agent <agent>",
-    "Filter by agent type (claude-code, gemini-cli, custom)",
+    "Filter by agent type (claude-code, gemini-cli, opencode, custom)",
   )
   .action(async (options) => {
     const config = ensureConfig();
@@ -215,8 +215,8 @@ vmCommand
   .option("-p, --prompt <prompt>", "Initial prompt for the agent")
   .option(
     "--agent <agent>",
-    "Agent type (claude-code, gemini-cli, custom)",
-    "gemini-cli",
+    "Agent type (claude-code, gemini-cli, opencode, custom)",
+    "opencode",
   )
   .option(
     "-t, --type <type>",

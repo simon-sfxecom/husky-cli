@@ -161,11 +161,12 @@ async function createVMSession(config: ValidConfig): Promise<void> {
     const agentType = await select({
       message: "Agent type:",
       choices: [
+        { name: "OpenCode", value: "opencode" },
         { name: "Claude Code", value: "claude-code" },
         { name: "Gemini CLI", value: "gemini-cli" },
         { name: "Custom", value: "custom" },
       ],
-      default: "claude-code",
+      default: "opencode",
     });
 
     const res = await fetch(`${config.apiUrl}/api/vm-sessions`, {

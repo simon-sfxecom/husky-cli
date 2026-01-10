@@ -145,7 +145,7 @@ ${subcommandCases}
       return 0
       ;;
     --agent)
-      COMPREPLY=( $(compgen -W "claude-code gemini-cli custom" -- \${cur}) )
+      COMPREPLY=( $(compgen -W "claude-code gemini-cli opencode custom" -- \${cur}) )
       return 0
       ;;
     --type)
@@ -287,7 +287,7 @@ complete -c husky -l project -d "Project ID" -r
 complete -c husky -l status -d "Filter by status" -r -a "backlog in_progress review done pending running completed failed"
 complete -c husky -l priority -d "Priority level" -r -a "low medium high urgent must should could wont"
 complete -c husky -l assignee -d "Assignee type" -r -a "human llm unassigned"
-complete -c husky -l agent -d "Agent type" -r -a "claude-code gemini-cli custom"
+complete -c husky -l agent -d "Agent type" -r -a "claude-code gemini-cli opencode custom"
 complete -c husky -l type -d "Type filter" -r -a "global project architecture patterns decisions learnings"
 complete -c husky -l value-stream -d "Value stream" -r -a "order_to_delivery procure_to_pay returns_management product_lifecycle customer_service marketing_sales finance_accounting hr_operations it_operations general"
 complete -c husky -l action -d "Action type" -r -a "manual semi_automated fully_automated"
