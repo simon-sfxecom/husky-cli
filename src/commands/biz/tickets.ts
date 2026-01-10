@@ -521,22 +521,52 @@ ticketsCommand
                 parseInt(options.limit, 10) + 1 // +1 to exclude self
             );
 
+            // Extract ticket_id from payload (handle nested metadata.ticket_id)
+            const extractTicketId = (payload: Record<string, unknown> | undefined): number | null => {
+                if (!payload) return null;
+                if (typeof payload.ticket_id === 'number') return payload.ticket_id;
+                if (typeof payload.id === 'number') return payload.id;
+                const metadata = payload.metadata as Record<string, unknown> | undefined;
+                if (metadata && typeof metadata.ticket_id === 'number') return metadata.ticket_id;
+                return null;
+            };
+
             // Filter out the same ticket
             const filteredResults = results.filter(r => {
-                const payload = r.payload as { ticket_id?: number; id?: number } | undefined;
-                return payload?.ticket_id !== ticket.id && payload?.id !== ticket.id;
+                const ticketId = extractTicketId(r.payload as Record<string, unknown>);
+                return ticketId !== ticket.id;
             }).slice(0, parseInt(options.limit, 10));
+
+            // Fetch ticket details from Zendesk for each result
+            const ticketIds = filteredResults
+                .map(r => extractTicketId(r.payload as Record<string, unknown>))
+                .filter((id): id is number => id !== null);
+            
+            const ticketDetailsMap = new Map<number, { subject: string; status: string }>();
+            if (ticketIds.length > 0) {
+                console.log(`  Fetching ${ticketIds.length} ticket details...`);
+                const ticketDetails = await Promise.all(
+                    ticketIds.map(id => zendesk.getTicket(id).catch(() => null))
+                );
+                ticketDetails.forEach((t, i) => {
+                    if (t) ticketDetailsMap.set(ticketIds[i], { subject: t.subject, status: t.status });
+                });
+            }
 
             if (options.json) {
                 console.log(JSON.stringify({
                     success: true,
                     source_ticket: { id: ticket.id, subject: ticket.subject },
-                    similar: filteredResults.map(r => ({
-                        id: (r.payload as Record<string, unknown>)?.ticket_id || r.id,
-                        score: r.score,
-                        subject: (r.payload as Record<string, unknown>)?.subject,
-                        status: (r.payload as Record<string, unknown>)?.status,
-                    })),
+                    similar: filteredResults.map(r => {
+                        const ticketId = extractTicketId(r.payload as Record<string, unknown>);
+                        const details = ticketId ? ticketDetailsMap.get(ticketId) : undefined;
+                        return {
+                            id: ticketId,
+                            score: r.score,
+                            subject: details?.subject,
+                            status: details?.status,
+                        };
+                    }),
                 }, null, 2));
                 return;
             }
@@ -549,10 +579,10 @@ ticketsCommand
             }
 
             for (const result of filteredResults) {
-                const payload = result.payload as Record<string, unknown>;
-                const ticketId = payload?.ticket_id || payload?.id || result.id;
-                const subject = payload?.subject || '(no subject)';
-                const status = payload?.status || '';
+                const ticketId = extractTicketId(result.payload as Record<string, unknown>);
+                const details = ticketId ? ticketDetailsMap.get(ticketId) : undefined;
+                const subject = details?.subject || '(no subject)';
+                const status = details?.status || '';
                 console.log(`  [${(result.score * 100).toFixed(1)}%] #${ticketId} │ ${status} │ ${String(subject).slice(0, 45)}`);
             }
             console.log("");
@@ -572,14 +602,13 @@ ticketsCommand
     .option("--json", "Output as JSON")
     .action(async (query, options) => {
         try {
+            const zendesk = ZendeskClient.fromConfig();
             const embeddings = EmbeddingService.fromConfig();
             const qdrant = QdrantClient.fromConfig();
 
-            // 1. Create embedding from query
             console.log(`  Generating embedding for query...`);
             const vector = await embeddings.embed(query);
 
-            // 2. Search Qdrant
             console.log(`  Searching ${options.collection}...`);
             const results = await qdrant.search(
                 options.collection,
@@ -587,16 +616,44 @@ ticketsCommand
                 parseInt(options.limit, 10)
             );
 
+            const extractTicketId = (payload: Record<string, unknown> | undefined): number | null => {
+                if (!payload) return null;
+                if (typeof payload.ticket_id === 'number') return payload.ticket_id;
+                if (typeof payload.id === 'number') return payload.id;
+                const metadata = payload.metadata as Record<string, unknown> | undefined;
+                if (metadata && typeof metadata.ticket_id === 'number') return metadata.ticket_id;
+                return null;
+            };
+
+            const ticketIds = results
+                .map(r => extractTicketId(r.payload as Record<string, unknown>))
+                .filter((id): id is number => id !== null);
+            
+            const ticketDetailsMap = new Map<number, { subject: string; status: string }>();
+            if (ticketIds.length > 0) {
+                console.log(`  Fetching ${ticketIds.length} ticket details...`);
+                const ticketDetails = await Promise.all(
+                    ticketIds.map(id => zendesk.getTicket(id).catch(() => null))
+                );
+                ticketDetails.forEach((t, i) => {
+                    if (t) ticketDetailsMap.set(ticketIds[i], { subject: t.subject, status: t.status });
+                });
+            }
+
             if (options.json) {
                 console.log(JSON.stringify({
                     success: true,
                     query,
-                    results: results.map(r => ({
-                        id: (r.payload as Record<string, unknown>)?.ticket_id || r.id,
-                        score: r.score,
-                        subject: (r.payload as Record<string, unknown>)?.subject,
-                        status: (r.payload as Record<string, unknown>)?.status,
-                    })),
+                    results: results.map(r => {
+                        const ticketId = extractTicketId(r.payload as Record<string, unknown>);
+                        const details = ticketId ? ticketDetailsMap.get(ticketId) : undefined;
+                        return {
+                            id: ticketId,
+                            score: r.score,
+                            subject: details?.subject,
+                            status: details?.status,
+                        };
+                    }),
                 }, null, 2));
                 return;
             }
@@ -609,10 +666,10 @@ ticketsCommand
             }
 
             for (const result of results) {
-                const payload = result.payload as Record<string, unknown>;
-                const ticketId = payload?.ticket_id || payload?.id || result.id;
-                const subject = payload?.subject || '(no subject)';
-                const status = payload?.status || '';
+                const ticketId = extractTicketId(result.payload as Record<string, unknown>);
+                const details = ticketId ? ticketDetailsMap.get(ticketId) : undefined;
+                const subject = details?.subject || '(no subject)';
+                const status = details?.status || '';
                 console.log(`  [${(result.score * 100).toFixed(1)}%] #${ticketId} │ ${status} │ ${String(subject).slice(0, 45)}`);
             }
             console.log("");
