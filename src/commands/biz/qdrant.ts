@@ -6,6 +6,7 @@
 
 import { Command } from "commander";
 import { QdrantClient } from "../../lib/biz/index.js";
+import { requireRole } from "../../lib/permissions.js";
 
 export const qdrantCommand = new Command("qdrant")
     .description("Vector database operations (Qdrant)");
@@ -183,6 +184,39 @@ qdrantCommand
 
             await client.deletePoints(collection, [id]);
             console.log(`✓ Deleted point ${id} from ${collection}`);
+
+        } catch (error) {
+            console.error("Error:", (error as Error).message);
+            process.exit(1);
+        }
+    });
+
+// husky biz qdrant delete-collection <name> (ADMIN ONLY)
+qdrantCommand
+    .command("delete-collection <name>")
+    .description("Delete an entire collection (ADMIN ONLY)")
+    .option("-f, --force", "Skip confirmation")
+    .action(async (name, options) => {
+        try {
+            // Require admin role
+            requireRole("admin");
+
+            const client = QdrantClient.fromConfig();
+
+            // Get collection info first
+            const info = await client.getCollection(name);
+
+            if (!options.force) {
+                console.log(`\n  ⚠️  DANGER: About to DELETE collection "${name}"`);
+                console.log(`     Points: ${info.pointsCount}`);
+                console.log(`     Vectors: ${info.vectorsCount}`);
+                console.log(`\n     This action is IRREVERSIBLE!`);
+                console.log(`     Use --force to confirm deletion\n`);
+                process.exit(0);
+            }
+
+            await client.deleteCollection(name);
+            console.log(`✓ Deleted collection "${name}"`);
 
         } catch (error) {
             console.error("Error:", (error as Error).message);

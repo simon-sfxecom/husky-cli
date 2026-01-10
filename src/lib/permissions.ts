@@ -8,7 +8,15 @@
 import { getConfig, hasPermission, getRole, fetchAndCacheRole, clearRoleCache } from "../commands/config.js";
 
 // Agent roles (must match dashboard types.ts)
-export type AgentRole = "supervisor" | "worker" | "reviewer" | "e2e_agent" | "pr_agent" | "support";
+export type AgentRole =
+  | "admin"
+  | "supervisor"
+  | "worker"
+  | "reviewer"
+  | "e2e_agent"
+  | "pr_agent"
+  | "support"
+  | "devops";
 
 /**
  * Check if current user has a specific permission.
@@ -60,6 +68,28 @@ export function requireAnyPermission(permissions: string[]): void {
  */
 export function getCurrentRole(): AgentRole | undefined {
   return getRole();
+}
+
+/**
+ * Check if current agent has one of the specified roles.
+ */
+export function hasRole(...roles: AgentRole[]): boolean {
+  const config = getConfig();
+  return roles.includes(config.role as AgentRole);
+}
+
+/**
+ * Require one of the specified roles, exit if not granted.
+ */
+export function requireRole(...roles: AgentRole[]): void {
+  const config = getConfig();
+  const currentRole = config.role as AgentRole | undefined;
+
+  if (!currentRole || !roles.includes(currentRole)) {
+    console.error(`Error: Role required: ${roles.join(" or ")}`);
+    console.error(`Your role: ${currentRole || "not set"}`);
+    process.exit(1);
+  }
 }
 
 /**
@@ -159,4 +189,14 @@ export const guards = {
    * Guard for deployment operations
    */
   deployAccess: () => requireAnyPermission(["deploy:preview", "deploy:sandbox", "deploy:*"]),
+
+  /**
+   * Guard for infrastructure operations (devops)
+   */
+  infraAccess: () => requireAnyPermission(["infra:monitor", "infra:update", "infra:*"]),
+
+  /**
+   * Guard for task:status permission
+   */
+  taskStatus: () => requirePermission("task:status"),
 };

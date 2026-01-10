@@ -32,6 +32,11 @@ import { previewCommand } from "./commands/preview.js";
 import { initCommand } from "./commands/init.js";
 import { brainCommand } from "./commands/brain.js";
 import { mermaidCommand } from "./commands/mermaid.js";
+import { sopCommand } from "./commands/sop.js";
+import { filesCommand } from "./commands/files.js";
+import { infraCommand } from "./commands/infra.js";
+import { e2eCommand } from "./commands/e2e.js";
+import { prCommand } from "./commands/pr.js";
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -72,6 +77,11 @@ program.addCommand(initCommand);
 program.addCommand(agentMsgCommand);
 program.addCommand(brainCommand);
 program.addCommand(mermaidCommand);
+program.addCommand(sopCommand);
+program.addCommand(filesCommand);
+program.addCommand(infraCommand);
+program.addCommand(e2eCommand);
+program.addCommand(prCommand);
 
 // Handle --llm flag specially
 if (process.argv.includes("--llm")) {
