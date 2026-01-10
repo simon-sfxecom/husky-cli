@@ -14,9 +14,10 @@ workerCommand
     const config = getConfig();
     const identity = getWorkerIdentity();
 
-    // Fetch role from API
-    let role = "unknown";
-    let permissions: string[] = [];
+    // Fetch role from API, fallback to cached config
+    let role = config.role || "unknown";
+    let permissions: string[] = config.permissions || [];
+    let roleSource = "cached";
 
     if (config.apiUrl && config.apiKey) {
       try {
@@ -25,16 +26,17 @@ workerCommand
         });
         if (res.ok) {
           const data = await res.json();
-          role = data.role || "unknown";
-          permissions = data.permissions || [];
+          role = data.role || role;
+          permissions = data.permissions || permissions;
+          roleSource = "api";
         }
       } catch {
-        // Silently fail - role will show as "unknown"
+        // Fallback to cached role from config
       }
     }
 
     if (options.json) {
-      console.log(JSON.stringify({ ...identity, role, permissions }, null, 2));
+      console.log(JSON.stringify({ ...identity, role, permissions, roleSource }, null, 2));
     } else {
       console.log("\n  Worker Identity");
       console.log("  " + "─".repeat(40));
@@ -45,7 +47,7 @@ workerCommand
       console.log(`  Platform: ${identity.platform}`);
       console.log(`  Version:  ${identity.agentVersion}`);
       console.log("  " + "─".repeat(40));
-      console.log(`  Role:     ${role}`);
+      console.log(`  Role:     ${role}${roleSource === "cached" ? " (cached)" : ""}`);
       if (permissions.length > 0) {
         console.log(`  Perms:    ${permissions.join(", ")}`);
       }
