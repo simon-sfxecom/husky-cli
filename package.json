@@ -21,15 +21,16 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.0",
     "@inquirer/prompts": "^8.1.0",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "firebase-admin": "^13.6.0"
   },
   "devDependencies": {
     "@types/node": "^22",
-    "typescript": "^5",
-    "vitest": "^2.1.8",
     "@vitest/coverage-v8": "^2.1.8",
+    "memfs": "^4.14.0",
     "msw": "^2.6.8",
-    "memfs": "^4.14.0"
+    "typescript": "^5",
+    "vitest": "^2.1.8"
   },
   "files": [
     "dist"
