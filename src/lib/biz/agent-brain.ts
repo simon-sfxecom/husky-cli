@@ -1,28 +1,20 @@
-import { initializeApp, getApps, App } from 'firebase-admin/app';
-import { getFirestore, Firestore, Timestamp } from 'firebase-admin/firestore';
+import { QdrantClient } from './qdrant.js';
 import { EmbeddingService } from './embeddings.js';
 import { getConfig } from '../../commands/config.js';
+import { randomUUID } from 'crypto';
 
-const BRAIN_COLLECTION = 'agent_brains';
-const DEFAULT_DATABASE = '(default)';
+const MEMORIES_COLLECTION = 'agent-memories';
+const VECTOR_SIZE = 768;
 
 export const AGENT_TYPES = ['support', 'claude', 'gotess', 'supervisor', 'worker'] as const;
 export type AgentType = typeof AGENT_TYPES[number];
 
-const AGENT_DB_MAP: Record<AgentType, string> = {
-    support: 'support-brain-db',
-    claude: 'claude-brain-db',
-    gotess: 'gotess-brain-db',
-    supervisor: 'supervisor-brain-db',
-    worker: 'worker-brain-db',
-};
-
 export interface Memory {
     id: string;
     agent: string;
+    agentType?: string;
     content: string;
     tags: string[];
-    embedding?: number[];
     createdAt: Date;
     updatedAt: Date;
     metadata?: Record<string, unknown>;
@@ -38,9 +30,6 @@ export interface AgentBrainOptions {
     agentType?: AgentType;
     projectId?: string;
 }
-
-const firestoreCache: Map<string, Firestore> = new Map();
-let firebaseInitialized = false;
 
 export function isValidAgentType(value: string | undefined): value is AgentType {
     return value !== undefined && AGENT_TYPES.includes(value as AgentType);
@@ -61,20 +50,11 @@ export function getAgentType(): AgentType | undefined {
     return undefined;
 }
 
-export function getDatabaseName(agentType?: AgentType): string {
-    if (!agentType) {
-        return DEFAULT_DATABASE;
-    }
-    return AGENT_DB_MAP[agentType];
-}
-
 export class AgentBrain {
-    private db: Firestore;
+    private qdrant: QdrantClient;
     private embeddings: EmbeddingService;
     private agentId: string;
     private agentType?: AgentType;
-    private collectionPath: string;
-    private databaseName: string;
 
     constructor(agentIdOrOptions: string | AgentBrainOptions, projectId?: string) {
         let options: AgentBrainOptions;
@@ -88,91 +68,84 @@ export class AgentBrain {
         
         this.agentId = options.agentId;
         this.agentType = options.agentType || getAgentType();
-        this.databaseName = getDatabaseName(this.agentType);
+        
+        this.qdrant = QdrantClient.fromConfig();
         
         const gcpProject = options.projectId || config.gcpProjectId || process.env.GOOGLE_CLOUD_PROJECT || 'tigerv0';
-        
-        if (!firebaseInitialized && getApps().length === 0) {
-            initializeApp({ projectId: gcpProject });
-            firebaseInitialized = true;
-        }
-        
-        const cacheKey = `${gcpProject}:${this.databaseName}`;
-        let db = firestoreCache.get(cacheKey);
-        
-        if (!db) {
-            if (this.databaseName === DEFAULT_DATABASE) {
-                db = getFirestore();
-            } else {
-                db = getFirestore(this.databaseName);
-            }
-            firestoreCache.set(cacheKey, db);
-        }
-        
-        this.db = db;
         this.embeddings = new EmbeddingService({ 
             projectId: gcpProject,
             location: config.gcpLocation || 'europe-west1'
         });
-        this.collectionPath = `${BRAIN_COLLECTION}/${this.agentId}/memories`;
     }
 
     getDatabaseInfo(): { agentType?: AgentType; databaseName: string } {
         return {
             agentType: this.agentType,
-            databaseName: this.databaseName,
+            databaseName: `qdrant:${MEMORIES_COLLECTION}`,
         };
+    }
+
+    private async ensureCollection(): Promise<void> {
+        try {
+            await this.qdrant.getCollection(MEMORIES_COLLECTION);
+        } catch {
+            await this.qdrant.createCollection(MEMORIES_COLLECTION, VECTOR_SIZE);
+        }
     }
 
     async remember(content: string, tags: string[] = [], metadata?: Record<string, unknown>): Promise<string> {
-        const embedding = await this.embeddings.embed(content);
+        await this.ensureCollection();
         
-        const memory = {
+        const embedding = await this.embeddings.embed(content);
+        const id = randomUUID();
+        const now = new Date().toISOString();
+        
+        await this.qdrant.upsertOne(MEMORIES_COLLECTION, id, embedding, {
             agent: this.agentId,
+            agentType: this.agentType || 'default',
             content,
             tags,
-            embedding,
             metadata: metadata || {},
-            createdAt: Timestamp.now(),
-            updatedAt: Timestamp.now(),
-        };
+            createdAt: now,
+            updatedAt: now,
+        });
         
-        const ref = await this.db.collection(this.collectionPath).add(memory);
-        return ref.id;
+        return id;
     }
 
     async recall(query: string, limit: number = 5, minScore: number = 0.5): Promise<RecallResult[]> {
+        await this.ensureCollection();
+        
         const queryEmbedding = await this.embeddings.embed(query);
         
-        const snapshot = await this.db.collection(this.collectionPath).get();
+        const filter = {
+            must: [
+                { key: 'agent', match: { value: this.agentId } }
+            ]
+        };
         
-        const results: RecallResult[] = [];
-        
-        for (const doc of snapshot.docs) {
-            const data = doc.data();
-            if (!data.embedding) continue;
-            
-            const score = this.cosineSimilarity(queryEmbedding, data.embedding);
-            
-            if (score >= minScore) {
-                results.push({
-                    memory: {
-                        id: doc.id,
-                        agent: data.agent,
-                        content: data.content,
-                        tags: data.tags || [],
-                        createdAt: data.createdAt?.toDate() || new Date(),
-                        updatedAt: data.updatedAt?.toDate() || new Date(),
-                        metadata: data.metadata,
-                    },
-                    score,
-                });
-            }
+        if (this.agentType) {
+            filter.must.push({ key: 'agentType', match: { value: this.agentType } } as typeof filter.must[0]);
         }
         
-        return results
-            .sort((a, b) => b.score - a.score)
-            .slice(0, limit);
+        const results = await this.qdrant.search(MEMORIES_COLLECTION, queryEmbedding, limit, {
+            filter,
+            scoreThreshold: minScore,
+        });
+        
+        return results.map(r => ({
+            memory: {
+                id: String(r.id),
+                agent: String(r.payload?.agent || ''),
+                agentType: String(r.payload?.agentType || ''),
+                content: String(r.payload?.content || ''),
+                tags: (r.payload?.tags as string[]) || [],
+                createdAt: new Date(String(r.payload?.createdAt || new Date().toISOString())),
+                updatedAt: new Date(String(r.payload?.updatedAt || new Date().toISOString())),
+                metadata: r.payload?.metadata as Record<string, unknown>,
+            },
+            score: r.score,
+        }));
     }
 
     async recallByTags(tags: string[], limit: number = 10): Promise<Memory[]> {
@@ -180,79 +153,110 @@ export class AgentBrain {
             return [];
         }
         
-        const snapshot = await this.db
-            .collection(this.collectionPath)
-            .where('tags', 'array-contains-any', tags)
-            .orderBy('createdAt', 'desc')
-            .limit(limit)
-            .get();
+        await this.ensureCollection();
         
-        return snapshot.docs.map(doc => ({
-            id: doc.id,
-            agent: doc.data().agent,
-            content: doc.data().content,
-            tags: doc.data().tags || [],
-            createdAt: doc.data().createdAt?.toDate() || new Date(),
-            updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-            metadata: doc.data().metadata,
-        }));
+        const filter = {
+            must: [
+                { key: 'agent', match: { value: this.agentId } },
+                { 
+                    should: tags.map(tag => ({
+                        key: 'tags',
+                        match: { any: [tag] }
+                    }))
+                }
+            ]
+        };
+        
+        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+            filter,
+            limit,
+            with_payload: true,
+        });
+        
+        return results
+            .map(r => ({
+                id: String(r.id),
+                agent: String(r.payload?.agent || ''),
+                agentType: String(r.payload?.agentType || ''),
+                content: String(r.payload?.content || ''),
+                tags: (r.payload?.tags as string[]) || [],
+                createdAt: new Date(String(r.payload?.createdAt || new Date().toISOString())),
+                updatedAt: new Date(String(r.payload?.updatedAt || new Date().toISOString())),
+                metadata: r.payload?.metadata as Record<string, unknown>,
+            }))
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
 
     async forget(memoryId: string): Promise<void> {
-        await this.db.collection(this.collectionPath).doc(memoryId).delete();
+        await this.ensureCollection();
+        await this.qdrant.deletePoints(MEMORIES_COLLECTION, [memoryId]);
     }
 
     async listMemories(limit: number = 20): Promise<Memory[]> {
-        const snapshot = await this.db
-            .collection(this.collectionPath)
-            .orderBy('createdAt', 'desc')
-            .limit(limit)
-            .get();
+        await this.ensureCollection();
         
-        return snapshot.docs.map(doc => ({
-            id: doc.id,
-            agent: doc.data().agent,
-            content: doc.data().content,
-            tags: doc.data().tags || [],
-            createdAt: doc.data().createdAt?.toDate() || new Date(),
-            updatedAt: doc.data().updatedAt?.toDate() || new Date(),
-            metadata: doc.data().metadata,
-        }));
+        const filter = {
+            must: [
+                { key: 'agent', match: { value: this.agentId } }
+            ]
+        };
+        
+        if (this.agentType) {
+            filter.must.push({ key: 'agentType', match: { value: this.agentType } } as typeof filter.must[0]);
+        }
+        
+        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+            filter,
+            limit,
+            with_payload: true,
+        });
+        
+        return results
+            .map(r => ({
+                id: String(r.id),
+                agent: String(r.payload?.agent || ''),
+                agentType: String(r.payload?.agentType || ''),
+                content: String(r.payload?.content || ''),
+                tags: (r.payload?.tags as string[]) || [],
+                createdAt: new Date(String(r.payload?.createdAt || new Date().toISOString())),
+                updatedAt: new Date(String(r.payload?.updatedAt || new Date().toISOString())),
+                metadata: r.payload?.metadata as Record<string, unknown>,
+            }))
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     }
 
     async stats(): Promise<{ count: number; tags: Record<string, number> }> {
-        const snapshot = await this.db.collection(this.collectionPath).get();
+        await this.ensureCollection();
+        
+        const filter = {
+            must: [
+                { key: 'agent', match: { value: this.agentId } }
+            ]
+        };
+        
+        if (this.agentType) {
+            filter.must.push({ key: 'agentType', match: { value: this.agentType } } as typeof filter.must[0]);
+        }
+        
+        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+            filter,
+            limit: 1000,
+            with_payload: true,
+        });
         
         const tagCounts: Record<string, number> = {};
         
-        for (const doc of snapshot.docs) {
-            const tags = doc.data().tags || [];
+        for (const r of results) {
+            const tags = (r.payload?.tags as string[]) || [];
             for (const tag of tags) {
                 tagCounts[tag] = (tagCounts[tag] || 0) + 1;
             }
         }
         
         return {
-            count: snapshot.size,
+            count: results.length,
             tags: tagCounts,
         };
-    }
-
-    private cosineSimilarity(a: number[], b: number[]): number {
-        if (a.length !== b.length) return 0;
-        
-        let dotProduct = 0;
-        let normA = 0;
-        let normB = 0;
-        
-        for (let i = 0; i < a.length; i++) {
-            dotProduct += a[i] * b[i];
-            normA += a[i] * a[i];
-            normB += b[i] * b[i];
-        }
-        
-        const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
-        return magnitude === 0 ? 0 : dotProduct / magnitude;
     }
 }
 
