@@ -3,6 +3,7 @@ import { getConfig } from "./config.js";
 import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
+import { spawnSync } from "child_process";
 import {
   DEFAULT_AGENT_CONFIGS,
   generateStartupScript,
@@ -959,6 +960,396 @@ vmCommand
 
     console.log(script);
   });
+
+// ============================================================================
+// VM Monitoring Commands
+// ============================================================================
+
+// Patterns that indicate an agent is stuck
+const STUCK_PATTERNS = [
+  { pattern: /Do you want to allow|Allow this action|allow this tool/i, reason: "Waiting for allow/deny prompt" },
+  { pattern: /\[y\/n\]|\[Y\/n\]|\(yes\/no\)/i, reason: "Waiting for yes/no confirmation" },
+  { pattern: /Press Enter to continue|press any key/i, reason: "Waiting for user input" },
+  { pattern: /Error:|error:|FAILED|failed/i, reason: "Error detected" },
+  { pattern: /permission denied|Permission denied/i, reason: "Permission denied error" },
+  { pattern: /timed out|timeout|Timeout/i, reason: "Timeout error" },
+];
+
+interface VMMonitorStatus {
+  vmName: string;
+  zone: string;
+  ip?: string;
+  sessions: SessionStatus[];
+  isStuck: boolean;
+  stuckReason?: string;
+}
+
+interface SessionStatus {
+  sessionName: string;
+  lastOutput: string;
+  isStuck: boolean;
+  stuckReason?: string;
+}
+
+// Helper to run SSH command on a VM using spawnSync (no shell injection)
+function sshCommand(vmName: string, zone: string, command: string): string | null {
+  try {
+    const result = spawnSync("gcloud", [
+      "compute", "ssh", vmName,
+      `--zone=${zone}`,
+      `--command=${command}`,
+    ], { encoding: "utf-8", timeout: 30000 });
+
+    if (result.status !== 0) return null;
+    return result.stdout?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+// Get tmux sessions on a VM
+function getTmuxSessions(vmName: string, zone: string): string[] {
+  const result = sshCommand(vmName, zone, "tmux list-sessions -F '#{session_name}' 2>/dev/null || true");
+  if (!result) return [];
+  return result.split("\n").filter(Boolean);
+}
+
+// Capture last lines from a tmux session
+function captureTmuxOutput(vmName: string, zone: string, sessionName: string, lines: number = 50): string | null {
+  return sshCommand(vmName, zone, `tmux capture-pane -t ${sessionName} -p -S -${lines} 2>/dev/null || true`);
+}
+
+// Check if output matches stuck patterns
+function checkForStuckPatterns(output: string): { isStuck: boolean; reason?: string } {
+  for (const { pattern, reason } of STUCK_PATTERNS) {
+    if (pattern.test(output)) {
+      return { isStuck: true, reason };
+    }
+  }
+  return { isStuck: false };
+}
+
+// husky vm monitor
+vmCommand
+  .command("monitor")
+  .description("Monitor agent status across running VMs")
+  .option("--vm <name>", "Monitor specific VM only")
+  .option("--watch", "Continuous monitoring (refresh every 10s)")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    const config = ensureConfig();
+
+    // Get running VMs from API
+    const getRunningVMs = async (): Promise<VMSession[]> => {
+      const url = new URL("/api/vm-sessions", config.apiUrl);
+      url.searchParams.set("vmStatus", "running");
+
+      const res = await fetch(url.toString(), {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const data = await res.json();
+      return data.sessions || [];
+    };
+
+    const monitorVMs = async () => {
+      let sessions: VMSession[];
+
+      try {
+        sessions = await getRunningVMs();
+      } catch (error) {
+        console.error("Error fetching VMs:", error);
+        return [];
+      }
+
+      // Filter by VM name if specified
+      if (options.vm) {
+        sessions = sessions.filter(
+          (s) => s.vmName === options.vm || s.name === options.vm || s.id === options.vm
+        );
+      }
+
+      if (sessions.length === 0) {
+        console.log("\n  No running VMs found.");
+        return [];
+      }
+
+      const results: VMMonitorStatus[] = [];
+
+      for (const session of sessions) {
+        const vmStatus: VMMonitorStatus = {
+          vmName: session.vmName,
+          zone: session.vmZone,
+          ip: session.vmIpAddress,
+          sessions: [],
+          isStuck: false,
+        };
+
+        // Get tmux sessions on this VM
+        const tmuxSessions = getTmuxSessions(session.vmName, session.vmZone);
+
+        if (tmuxSessions.length === 0) {
+          vmStatus.sessions.push({
+            sessionName: "(none)",
+            lastOutput: "No tmux sessions running",
+            isStuck: false,
+          });
+        } else {
+          for (const tmuxSession of tmuxSessions) {
+            const output = captureTmuxOutput(session.vmName, session.vmZone, tmuxSession) || "";
+            const stuckCheck = checkForStuckPatterns(output);
+
+            const sessionStatus: SessionStatus = {
+              sessionName: tmuxSession,
+              lastOutput: output.split("\n").slice(-10).join("\n"),
+              isStuck: stuckCheck.isStuck,
+              stuckReason: stuckCheck.reason,
+            };
+
+            vmStatus.sessions.push(sessionStatus);
+
+            if (stuckCheck.isStuck) {
+              vmStatus.isStuck = true;
+              vmStatus.stuckReason = `${tmuxSession}: ${stuckCheck.reason}`;
+            }
+          }
+        }
+
+        results.push(vmStatus);
+      }
+
+      return results;
+    };
+
+    // Initial check
+    const results = await monitorVMs();
+
+    if (options.json) {
+      console.log(JSON.stringify(results, null, 2));
+      if (!options.watch) return;
+    } else {
+      printMonitorResults(results);
+    }
+
+    // Watch mode
+    if (options.watch) {
+      console.log("\n--- Monitoring (Ctrl+C to stop, refreshing every 10s) ---\n");
+
+      const interval = setInterval(async () => {
+        const newResults = await monitorVMs();
+        if (options.json) {
+          console.log(JSON.stringify(newResults, null, 2));
+        } else {
+          console.log("\x1b[2J\x1b[H"); // Clear screen
+          console.log(`VM Monitor - ${new Date().toLocaleTimeString()}`);
+          printMonitorResults(newResults);
+        }
+      }, 10000);
+
+      process.on("SIGINT", () => {
+        clearInterval(interval);
+        console.log("\nMonitoring stopped.");
+        process.exit(0);
+      });
+
+      await new Promise(() => {});
+    }
+  });
+
+// husky vm unstuck <vmName>
+vmCommand
+  .command("unstuck <vmName>")
+  .description("Try to unstick an agent by sending input")
+  .option("--session <name>", "Target specific tmux session", "main")
+  .option("--action <action>", "Action to send (see --list-actions)", "enter")
+  .option("--zone <zone>", "GCP zone", "europe-west1-b")
+  .option("--text <text>", "Send custom text (use with --action custom)")
+  .option("--list-actions", "Show all available actions")
+  .option("--json", "Output as JSON")
+  .action(async (vmName, options) => {
+    // All available actions for different AI agents
+    const actionKeys: Record<string, string> = {
+      // Basic actions
+      enter: "Enter",
+      yes: "y Enter",
+      no: "n Enter",
+
+      // Claude Code / OpenCode prompts
+      allow: "y Enter",           // Allow single action
+      deny: "n Enter",            // Deny action
+      "allow-all": "a Enter",     // Allow all (OpenCode)
+      a: "a Enter",               // Shorthand for allow-all
+
+      // Numbered menu selections (common in OpenCode)
+      "1": "1 Enter",
+      "2": "2 Enter",
+      "3": "3 Enter",
+      "4": "4 Enter",
+      "5": "5 Enter",
+
+      // Common responses
+      skip: "s Enter",            // Skip
+      cancel: "Escape",           // Cancel/escape
+      quit: "q Enter",            // Quit
+      continue: "c Enter",        // Continue
+      retry: "r Enter",           // Retry
+
+      // Custom text (use with --text)
+      custom: "",
+    };
+
+    // Show available actions
+    if (options.listActions) {
+      console.log("\n  Available unstuck actions:\n");
+      console.log("  Basic:");
+      console.log("    enter        - Press Enter");
+      console.log("    yes / y      - Send 'y' + Enter");
+      console.log("    no / n       - Send 'n' + Enter");
+      console.log("\n  AI Agent Prompts:");
+      console.log("    allow        - Allow action (y + Enter)");
+      console.log("    deny         - Deny action (n + Enter)");
+      console.log("    allow-all/a  - Allow all (a + Enter) - OpenCode");
+      console.log("\n  Menu Selections:");
+      console.log("    1, 2, 3, 4, 5 - Send number + Enter");
+      console.log("\n  Other:");
+      console.log("    skip         - Skip (s + Enter)");
+      console.log("    cancel       - Escape key");
+      console.log("    quit         - Quit (q + Enter)");
+      console.log("    continue     - Continue (c + Enter)");
+      console.log("    retry        - Retry (r + Enter)");
+      console.log("    custom       - Use with --text to send custom input");
+      console.log("\n  Examples:");
+      console.log("    husky vm unstuck supervisor --action allow-all");
+      console.log("    husky vm unstuck worker-1 --action 2");
+      console.log('    husky vm unstuck support --action custom --text "my response"');
+      console.log("");
+      return;
+    }
+
+    // Handle custom text action
+    let keys: string;
+    if (options.action === "custom") {
+      if (!options.text) {
+        console.error("Error: --text is required when using --action custom");
+        process.exit(1);
+      }
+      // Escape special characters for tmux send-keys
+      const escapedText = options.text.replace(/"/g, '\\"').replace(/'/g, "\\'");
+      keys = `"${escapedText}" Enter`;
+    } else {
+      keys = actionKeys[options.action] || "Enter";
+      if (!actionKeys[options.action]) {
+        console.warn(`Warning: Unknown action "${options.action}", sending Enter`);
+      }
+    }
+
+    console.log(`Sending "${options.action}" to ${vmName}:${options.session}...`);
+
+    try {
+      // First check if session exists
+      const sessions = getTmuxSessions(vmName, options.zone);
+      if (!sessions.includes(options.session)) {
+        console.error(`Error: Session "${options.session}" not found on ${vmName}`);
+        console.log(`Available sessions: ${sessions.join(", ") || "(none)"}`);
+        process.exit(1);
+      }
+
+      // Send keys to tmux session
+      const result = spawnSync("gcloud", [
+        "compute", "ssh", vmName,
+        `--zone=${options.zone}`,
+        `--command=tmux send-keys -t ${options.session} ${keys}`,
+      ], { encoding: "utf-8", timeout: 30000 });
+
+      if (result.status !== 0) {
+        throw new Error(result.stderr || "Failed to send keys");
+      }
+
+      // Wait a moment and capture output
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const output = captureTmuxOutput(vmName, options.zone, options.session, 20);
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          success: true,
+          action: options.action,
+          vmName,
+          session: options.session,
+          lastOutput: output?.split("\n").slice(-10).join("\n"),
+        }, null, 2));
+      } else {
+        console.log(`\nAction sent successfully!`);
+        console.log(`\nLast output from ${options.session}:`);
+        console.log("---");
+        console.log(output?.split("\n").slice(-10).join("\n") || "(no output)");
+        console.log("---");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      process.exit(1);
+    }
+  });
+
+// husky vm ssh <vmName>
+vmCommand
+  .command("ssh <vmName>")
+  .description("SSH into a VM (opens interactive shell)")
+  .option("--zone <zone>", "GCP zone", "europe-west1-b")
+  .option("--command <cmd>", "Run command instead of interactive shell")
+  .action(async (vmName, options) => {
+    if (options.command) {
+      const result = sshCommand(vmName, options.zone, options.command);
+      if (result !== null) {
+        console.log(result);
+      } else {
+        console.error("Failed to execute command");
+        process.exit(1);
+      }
+    } else {
+      // Interactive SSH
+      spawnSync("gcloud", ["compute", "ssh", vmName, `--zone=${options.zone}`], {
+        stdio: "inherit",
+      });
+    }
+  });
+
+function printMonitorResults(results: VMMonitorStatus[]) {
+  console.log("\n  VM MONITOR STATUS");
+  console.log("  " + "=".repeat(80));
+
+  for (const vm of results) {
+    const stuckIndicator = vm.isStuck ? " [STUCK]" : "";
+    console.log(`\n  ${vm.vmName}${stuckIndicator}`);
+    console.log(`  Zone: ${vm.zone} | IP: ${vm.ip || "N/A"}`);
+    console.log("  " + "-".repeat(60));
+
+    for (const session of vm.sessions) {
+      const sessionStuck = session.isStuck ? ` <- STUCK: ${session.stuckReason}` : "";
+      console.log(`\n  [${session.sessionName}]${sessionStuck}`);
+
+      const lines = session.lastOutput.split("\n").slice(-5);
+      for (const line of lines) {
+        console.log(`    ${line.substring(0, 76)}`);
+      }
+    }
+  }
+
+  const stuckVMs = results.filter((r) => r.isStuck);
+  if (stuckVMs.length > 0) {
+    console.log("\n  " + "=".repeat(80));
+    console.log(`  WARNING: ${stuckVMs.length} VM(s) appear stuck:`);
+    for (const vm of stuckVMs) {
+      console.log(`    - ${vm.vmName}: ${vm.stuckReason}`);
+    }
+    console.log(`\n  To unstick, run: husky vm unstuck <vmName> --action allow`);
+  }
+
+  console.log("");
+}
 
 // Print helpers
 function printVMSessions(

@@ -736,6 +736,253 @@ chatCommand
   });
 
 // ============================================
+// AGENT QUESTION COMMANDS (prevents supervisor loop)
+// ============================================
+
+// Agent persona/role icons for Google Chat messages
+const AGENT_PERSONA_ICONS: Record<string, string> = {
+  support: "🎧",
+  worker: "👷",
+  supervisor: "🎯",
+  reviewer: "🔍",
+  research: "🔬",
+  accounting: "📊",
+  marketing: "📢",
+  developer: "💻",
+  devops: "🔧",
+  default: "🤖",
+};
+
+chatCommand
+  .command("ask <question>")
+  .description("Ask a question to human via Google Chat (registers conversation for reply routing)")
+  .requiredOption("--space <id>", "Google Chat space ID (e.g., spaces/ABC123)")
+  .option("--agent-id <id>", "Agent ID (default: from env or hostname)")
+  .option("--vm-name <name>", "VM name (default: from env or hostname)")
+  .option("--session <name>", "Tmux session for reply routing", "main")
+  .option("--role <role>", "Agent role/persona (support, worker, supervisor, etc.)")
+  .option("--context <text>", "Additional context for the question")
+  .option("--task-id <id>", "Related task ID")
+  .option("--json", "Output as JSON")
+  .action(async (question: string, options) => {
+    const config = getConfig();
+    const huskyApiUrl = getHuskyApiUrl();
+    if (!huskyApiUrl) {
+      console.error("Error: API URL not configured. Set husky-api-url or api-url.");
+      process.exit(1);
+    }
+
+    // Get agent/VM identity
+    const agentId = options.agentId || process.env.HUSKY_AGENT_ID || process.env.HUSKY_WORKER_ID || `agent-${process.pid}`;
+    const vmName = options.vmName || process.env.HUSKY_VM_NAME || process.env.HOSTNAME || "unknown-vm";
+    const tmuxSession = options.session;
+    const agentRole = options.role || process.env.HUSKY_AGENT_TYPE || process.env.HUSKY_AGENT_ROLE || "worker";
+    const taskId = options.taskId || process.env.HUSKY_TASK_ID;
+
+    // Build formatted message with metadata
+    const icon = AGENT_PERSONA_ICONS[agentRole] || AGENT_PERSONA_ICONS.default;
+    let formattedMessage = `${icon} *Agent Question*\n\n`;
+    formattedMessage += `*From:* ${agentId} (${agentRole})\n`;
+    formattedMessage += `*VM:* ${vmName} / session: ${tmuxSession}\n`;
+    if (taskId) {
+      formattedMessage += `*Task:* ${taskId}\n`;
+    }
+    formattedMessage += `\n---\n\n${question}`;
+    if (options.context) {
+      formattedMessage += `\n\n*Context:* ${options.context}`;
+    }
+
+    try {
+      // 1. Send message to Google Chat
+      const sendRes = await fetch(`${huskyApiUrl}/api/google-chat/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          text: formattedMessage,
+          spaceName: options.space,
+          // Don't specify threadName - let Google Chat create a new thread
+        }),
+      });
+
+      if (!sendRes.ok) {
+        const error = await sendRes.text();
+        throw new Error(`Failed to send message: ${sendRes.status} - ${error}`);
+      }
+
+      const sendData = await sendRes.json() as { threadName?: string; name?: string };
+      const threadName = sendData.threadName || sendData.name;
+
+      if (!threadName) {
+        console.error("Warning: Could not get thread name from response. Reply routing may not work.");
+      }
+
+      // 2. Register conversation for reply routing (with full metadata)
+      const convRes = await fetch(`${huskyApiUrl}/api/agent-conversations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          agentId,
+          vmName,
+          tmuxSession,
+          spaceId: options.space,
+          threadName,
+          question,
+          status: "active",
+          // Additional metadata for routing and context
+          agentRole,
+          taskId: taskId || null,
+          context: options.context || null,
+        }),
+      });
+
+      let conversationId: string | undefined;
+      if (convRes.ok) {
+        const convData = await convRes.json() as { id: string };
+        conversationId = convData.id;
+      } else {
+        console.error("Warning: Failed to register conversation. Reply may go to supervisor instead.");
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          success: true,
+          agentId,
+          agentRole,
+          vmName,
+          tmuxSession,
+          threadName,
+          conversationId,
+          space: options.space,
+          question,
+          taskId: taskId || null,
+        }, null, 2));
+      } else {
+        console.log("✅ Question sent to Google Chat");
+        console.log(`   Agent: ${agentId} (${agentRole})`);
+        console.log(`   VM: ${vmName} / session: ${tmuxSession}`);
+        if (taskId) {
+          console.log(`   Task: ${taskId}`);
+        }
+        console.log(`   Thread: ${threadName || "(unknown)"}`);
+        if (conversationId) {
+          console.log(`   Conversation ID: ${conversationId}`);
+        }
+        console.log("\n   When human replies, it will be routed to your tmux session.");
+        console.log(`   To resolve conversation: husky chat resolve ${conversationId || threadName}`);
+      }
+    } catch (error) {
+      console.error("Error asking question:", error);
+      process.exit(1);
+    }
+  });
+
+chatCommand
+  .command("resolve <conversationId>")
+  .description("Mark a conversation as resolved (stops routing replies to agent)")
+  .action(async (conversationId: string) => {
+    const config = getConfig();
+    const huskyApiUrl = getHuskyApiUrl();
+    if (!huskyApiUrl) {
+      console.error("Error: API URL not configured. Set husky-api-url or api-url.");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${huskyApiUrl}/api/agent-conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({ status: "resolved" }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error("Conversation not found.");
+          process.exit(1);
+        }
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      console.log("✅ Conversation marked as resolved.");
+      console.log("   Future replies in this thread will go to supervisor.");
+    } catch (error) {
+      console.error("Error resolving conversation:", error);
+      process.exit(1);
+    }
+  });
+
+chatCommand
+  .command("conversations")
+  .description("List active agent conversations")
+  .option("--all", "Show all conversations (including resolved)")
+  .option("--agent <id>", "Filter by agent ID")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    const config = getConfig();
+    const huskyApiUrl = getHuskyApiUrl();
+    if (!huskyApiUrl) {
+      console.error("Error: API URL not configured. Set husky-api-url or api-url.");
+      process.exit(1);
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (!options.all) params.set("status", "active");
+      if (options.agent) params.set("agentId", options.agent);
+
+      const res = await fetch(`${huskyApiUrl}/api/agent-conversations?${params}`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const data = await res.json() as { conversations: Array<{
+        id: string;
+        agentId: string;
+        vmName: string;
+        question: string;
+        status: string;
+        createdAt: string;
+      }> };
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
+
+      if (!data.conversations || data.conversations.length === 0) {
+        console.log("No active conversations.");
+        return;
+      }
+
+      console.log("\n  Agent Conversations");
+      console.log("  " + "─".repeat(60));
+
+      for (const conv of data.conversations) {
+        const time = new Date(conv.createdAt).toLocaleString();
+        const statusIcon = conv.status === "active" ? "🟢" : "⚪";
+        console.log(`  ${statusIcon} [${conv.id.slice(0, 8)}] ${conv.agentId} @ ${conv.vmName}`);
+        console.log(`     Q: "${conv.question.slice(0, 50)}${conv.question.length > 50 ? "..." : ""}"`);
+        console.log(`     Created: ${time}`);
+        console.log("");
+      }
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      process.exit(1);
+    }
+  });
+
+// ============================================
 // REVIEW COMMANDS (kept for backwards compatibility)
 // ============================================
 

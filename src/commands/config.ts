@@ -14,31 +14,25 @@ interface Config {
   apiKey?: string;
   workerId?: string;
   workerName?: string;
-  // RBAC (cached from /api/auth/whoami)
   role?: AgentRole;
   permissions?: string[];
-  roleLastChecked?: string; // ISO date
-  // Billbee
+  roleLastChecked?: string;
   billbeeApiKey?: string;
   billbeeUsername?: string;
   billbeePassword?: string;
   billbeeBaseUrl?: string;
-  // Zendesk
   zendeskSubdomain?: string;
   zendeskEmail?: string;
   zendeskApiToken?: string;
-  // SeaTable
   seatableApiToken?: string;
   seatableServerUrl?: string;
-  // Qdrant
   qdrantUrl?: string;
   qdrantApiKey?: string;
-  // GCP (Vertex AI)
   gcpProjectId?: string;
   gcpLocation?: string;
-  // Gotess
   gotessToken?: string;
   gotessBookId?: string;
+  agentType?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -209,6 +203,7 @@ configCommand
       "gcp-location": "gcpLocation",
       "gotess-token": "gotessToken",
       "gotess-book-id": "gotessBookId",
+      "agent-type": "agentType",
     };
 
     const configKey = keyMappings[key];
@@ -222,6 +217,7 @@ configCommand
       console.log("  Qdrant:   qdrant-url, qdrant-api-key");
       console.log("  GCP:      gcp-project-id, gcp-location");
       console.log("  Gotess:   gotess-token, gotess-book-id");
+      console.log("  Brain:    agent-type");
       process.exit(1);
     }
 
@@ -230,6 +226,14 @@ configCommand
       const validation = validateApiUrl(value);
       if (!validation.valid) {
         console.error(`Error: ${validation.error}`);
+        process.exit(1);
+      }
+    }
+
+    if (key === "agent-type") {
+      const validTypes = ["support", "claude", "gotess", "supervisor", "worker"];
+      if (!validTypes.includes(value)) {
+        console.error(`Error: Invalid agent type. Must be one of: ${validTypes.join(", ")}`);
         process.exit(1);
       }
     }

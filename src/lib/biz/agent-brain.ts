@@ -1,9 +1,21 @@
-import { initializeApp, getApps } from 'firebase-admin/app';
+import { initializeApp, getApps, App } from 'firebase-admin/app';
 import { getFirestore, Firestore, Timestamp } from 'firebase-admin/firestore';
 import { EmbeddingService } from './embeddings.js';
 import { getConfig } from '../../commands/config.js';
 
 const BRAIN_COLLECTION = 'agent_brains';
+const DEFAULT_DATABASE = '(default)';
+
+export const AGENT_TYPES = ['support', 'claude', 'gotess', 'supervisor', 'worker'] as const;
+export type AgentType = typeof AGENT_TYPES[number];
+
+const AGENT_DB_MAP: Record<AgentType, string> = {
+    support: 'support-brain-db',
+    claude: 'claude-brain-db',
+    gotess: 'gotess-brain-db',
+    supervisor: 'supervisor-brain-db',
+    worker: 'worker-brain-db',
+};
 
 export interface Memory {
     id: string;
@@ -21,28 +33,95 @@ export interface RecallResult {
     score: number;
 }
 
+export interface AgentBrainOptions {
+    agentId: string;
+    agentType?: AgentType;
+    projectId?: string;
+}
+
+const firestoreCache: Map<string, Firestore> = new Map();
+let firebaseInitialized = false;
+
+export function isValidAgentType(value: string | undefined): value is AgentType {
+    return value !== undefined && AGENT_TYPES.includes(value as AgentType);
+}
+
+export function getAgentType(): AgentType | undefined {
+    const envType = process.env.HUSKY_AGENT_TYPE;
+    if (isValidAgentType(envType)) {
+        return envType;
+    }
+    
+    const config = getConfig();
+    const configType = config.agentType;
+    if (isValidAgentType(configType)) {
+        return configType;
+    }
+    
+    return undefined;
+}
+
+export function getDatabaseName(agentType?: AgentType): string {
+    if (!agentType) {
+        return DEFAULT_DATABASE;
+    }
+    return AGENT_DB_MAP[agentType];
+}
+
 export class AgentBrain {
     private db: Firestore;
     private embeddings: EmbeddingService;
     private agentId: string;
+    private agentType?: AgentType;
     private collectionPath: string;
+    private databaseName: string;
 
-    constructor(agentId: string, projectId?: string) {
-        this.agentId = agentId;
-        
-        const config = getConfig();
-        const gcpProject = projectId || config.gcpProjectId || process.env.GOOGLE_CLOUD_PROJECT || 'tigerv0';
-        
-        if (getApps().length === 0) {
-            initializeApp({ projectId: gcpProject });
+    constructor(agentIdOrOptions: string | AgentBrainOptions, projectId?: string) {
+        let options: AgentBrainOptions;
+        if (typeof agentIdOrOptions === 'string') {
+            options = { agentId: agentIdOrOptions, projectId };
+        } else {
+            options = agentIdOrOptions;
         }
         
-        this.db = getFirestore();
+        const config = getConfig();
+        
+        this.agentId = options.agentId;
+        this.agentType = options.agentType || getAgentType();
+        this.databaseName = getDatabaseName(this.agentType);
+        
+        const gcpProject = options.projectId || config.gcpProjectId || process.env.GOOGLE_CLOUD_PROJECT || 'tigerv0';
+        
+        if (!firebaseInitialized && getApps().length === 0) {
+            initializeApp({ projectId: gcpProject });
+            firebaseInitialized = true;
+        }
+        
+        const cacheKey = `${gcpProject}:${this.databaseName}`;
+        let db = firestoreCache.get(cacheKey);
+        
+        if (!db) {
+            if (this.databaseName === DEFAULT_DATABASE) {
+                db = getFirestore();
+            } else {
+                db = getFirestore(this.databaseName);
+            }
+            firestoreCache.set(cacheKey, db);
+        }
+        
+        this.db = db;
         this.embeddings = new EmbeddingService({ 
             projectId: gcpProject,
             location: config.gcpLocation || 'europe-west1'
         });
-        this.collectionPath = `${BRAIN_COLLECTION}/${agentId}/memories`;
+        this.collectionPath = `${BRAIN_COLLECTION}/${this.agentId}/memories`;
+    }
+
+    getDatabaseInfo(): { agentType?: AgentType; databaseName: string } {
+        return {
+            agentType: this.agentType,
+            databaseName: this.databaseName,
+        };
     }
 
     async remember(content: string, tags: string[] = [], metadata?: Record<string, unknown>): Promise<string> {
@@ -97,6 +176,10 @@ export class AgentBrain {
     }
 
     async recallByTags(tags: string[], limit: number = 10): Promise<Memory[]> {
+        if (tags.length === 0) {
+            return [];
+        }
+        
         const snapshot = await this.db
             .collection(this.collectionPath)
             .where('tags', 'array-contains-any', tags)
