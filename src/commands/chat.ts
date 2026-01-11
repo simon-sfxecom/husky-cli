@@ -468,6 +468,7 @@ chatCommand
         id: string;
         spaceName: string;
         threadName: string;
+        messageName?: string;
       }> };
 
       // Require exact match or at least 8 characters for prefix matching to avoid misdirected replies
@@ -528,7 +529,21 @@ chatCommand
           headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
         });
 
-        console.log("✅ Reply sent to Google Chat and message marked as read.");
+        // Add reaction to original message if messageName is available
+        if (msg.messageName) {
+          try {
+            await fetch(`${huskyApiUrl}/api/google-chat/messages/${encodeURIComponent(msg.messageName)}/react`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+              },
+              body: JSON.stringify({ emoji: "✅" }),
+            });
+          } catch {
+            // Reaction is optional - don't fail if it doesn't work
+          }
+        }
       }
     } catch (error) {
       console.error("Error replying:", error);

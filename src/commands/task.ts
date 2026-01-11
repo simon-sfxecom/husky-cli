@@ -1027,26 +1027,37 @@ taskCommand
     }
   });
 
-// husky task qa-reject [--id <id>] [--notes <text>]
+// husky task qa-reject [--id <id>] [--notes <text>] [--issues <json>]
 taskCommand
   .command("qa-reject")
-  .description("Manually reject QA for a task")
+  .description("Reject QA and request fixes")
   .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
   .option("--notes <text>", "Rejection notes")
+  .option("--issues <json>", "Issues as JSON array")
   .action(async (options) => {
     const config = ensureConfig();
     const taskId = getTaskId(options);
 
+    let issues = [];
+    if (options.issues) {
+      try {
+        issues = JSON.parse(options.issues);
+      } catch {
+        console.error("Error: --issues must be valid JSON");
+        process.exit(1);
+      }
+    }
+
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/approve`, {
+      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/reject`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
         },
         body: JSON.stringify({
-          approved: false,
           notes: options.notes,
+          issues,
         }),
       });
 
@@ -1054,11 +1065,27 @@ taskCommand
         throw new Error(`API error: ${res.status}`);
       }
 
-      console.log(`✗ QA manually rejected for task ${taskId}`);
+      console.log(`✗ QA rejected for task ${taskId}`);
+      console.log(`  Task returned to worker for fixes`);
     } catch (error) {
       console.error("Error rejecting QA:", error);
       process.exit(1);
     }
+  });
+
+// husky task qa-request-fix (alias for qa-reject with specific focus)
+taskCommand
+  .command("qa-request-fix")
+  .description("Request fixes from the worker")
+  .option("--id <id>", "Task ID (or set HUSKY_TASK_ID)")
+  .requiredOption("--notes <text>", "Fix instructions")
+  .option("--issues <json>", "Issues as JSON array")
+  .action(async (options) => {
+    // Re-use qa-reject logic
+    await taskCommand.parseAsync(
+      ["node", "husky", "task", "qa-reject", "--id", getTaskId(options), "--notes", options.notes, ...(options.issues ? ["--issues", options.issues] : [])], 
+      { from: "user" }
+    );
   });
 
 // husky task qa-iteration [--id <id>] --iteration <n> --status <status> [--issues <json>] [--duration <seconds>]

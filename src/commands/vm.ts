@@ -1485,3 +1485,346 @@ function printLog(log: VMSessionLog) {
 
   console.log(`${prefix}${timestamp} ${level} ${source} ${log.message}`);
 }
+
+// ============================================================================
+// Anthropic OAuth Commands (for subscription auth)
+// ============================================================================
+
+// husky vm auth-status <sessionId>
+vmCommand
+  .command("auth-status <sessionId>")
+  .description("Check Anthropic OAuth status for a VM session")
+  .option("--wait", "Wait for authentication to complete (polling)")
+  .option("--timeout <seconds>", "Timeout for waiting (default: 300)", "300")
+  .option("--json", "Output as JSON")
+  .action(async (sessionId, options) => {
+    const config = ensureConfig();
+
+    const checkStatus = async () => {
+      const res = await fetch(`${config.apiUrl}/api/vm-sessions/${sessionId}/auth-status`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`API error: ${res.status} - ${error}`);
+      }
+
+      return await res.json() as {
+        authStatus: string;
+        authUrl?: string;
+        authRequestedAt?: string;
+        authCodeSubmittedAt?: string;
+        vmStatus: string;
+      };
+    };
+
+    try {
+      let data = await checkStatus();
+
+      if (options.wait && ["none", "awaiting_url", "awaiting_code"].includes(data.authStatus)) {
+        console.log("Waiting for Anthropic authentication...");
+        const timeoutMs = parseInt(options.timeout, 10) * 1000;
+        const startTime = Date.now();
+        const pollInterval = 3000;
+
+        while (Date.now() - startTime < timeoutMs) {
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+          data = await checkStatus();
+
+          if (!["none", "awaiting_url", "awaiting_code"].includes(data.authStatus)) {
+            break;
+          }
+
+          process.stdout.write(".");
+        }
+        console.log("");
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
+
+      const statusIcon: Record<string, string> = {
+        none: "⚪",
+        awaiting_url: "🔗",
+        awaiting_code: "⏳",
+        code_submitted: "📤",
+        authenticated: "✅",
+        failed: "❌",
+      };
+
+      const icon = statusIcon[data.authStatus] || "❓";
+
+      console.log(`\n  ${icon} Auth Status: ${data.authStatus.toUpperCase()}`);
+      console.log("  " + "-".repeat(40));
+      console.log(`  VM Status:  ${data.vmStatus}`);
+      if (data.authUrl) {
+        console.log(`  Auth URL:   ${data.authUrl}`);
+      }
+      if (data.authRequestedAt) {
+        console.log(`  Requested:  ${new Date(data.authRequestedAt).toLocaleString()}`);
+      }
+      if (data.authCodeSubmittedAt) {
+        console.log(`  Code sent:  ${new Date(data.authCodeSubmittedAt).toLocaleString()}`);
+      }
+      console.log("");
+
+      // Exit with error code if not authenticated
+      if (data.authStatus === "failed") {
+        process.exit(1);
+      }
+    } catch (error) {
+      console.error("Error checking auth status:", error);
+      process.exit(1);
+    }
+  });
+
+// husky vm submit-auth-code <sessionId> <code>
+vmCommand
+  .command("submit-auth-code <sessionId> <code>")
+  .description("Submit Anthropic auth code to a VM session (fallback if GChat routing fails)")
+  .option("--submitted-by <name>", "Name of person submitting the code")
+  .option("--json", "Output as JSON")
+  .action(async (sessionId, code, options) => {
+    const config = ensureConfig();
+
+    // Validate code format (same as server-side)
+    const sanitizedCode = code.replace(/[^A-Za-z0-9-_]/g, "");
+    if (sanitizedCode !== code || code.length < 4) {
+      console.error("Error: Invalid auth code format.");
+      console.error("  Code must be at least 4 characters and contain only:");
+      console.error("  - Letters (A-Z, a-z)");
+      console.error("  - Numbers (0-9)");
+      console.error("  - Dashes (-) and underscores (_)");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/vm-sessions/${sessionId}/submit-auth-code`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          code: code,
+          submittedBy: options.submittedBy || "CLI",
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`API error: ${res.status} - ${error}`);
+      }
+
+      const data = await res.json() as {
+        success: boolean;
+        message: string;
+      };
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
+
+      console.log(`\n  ✅ ${data.message}`);
+      console.log("");
+    } catch (error) {
+      console.error("Error submitting auth code:", error);
+      process.exit(1);
+    }
+  });
+
+// husky vm claude-code <sessionId>
+vmCommand
+  .command("claude-code <sessionId>")
+  .description("Connect to Claude Code on a VM via SSH (for debugging/interaction)")
+  .option("--zone <zone>", "GCP zone", "europe-west1-b")
+  .option("--attach", "Attach to existing tmux session instead of new shell")
+  .action(async (sessionId, options) => {
+    const config = ensureConfig();
+
+    try {
+      // Get session details
+      const res = await fetch(`${config.apiUrl}/api/vm-sessions/${sessionId}`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`API error: ${res.status} - ${error}`);
+      }
+
+      const session = await res.json() as {
+        id: string;
+        vmName: string;
+        vmZone: string;
+        vmStatus: string;
+        vmIpAddress?: string;
+        authStatus?: string;
+      };
+
+      if (session.vmStatus !== "running" && session.vmStatus !== "awaiting_auth") {
+        console.error(`Error: VM is not running (status: ${session.vmStatus})`);
+        process.exit(1);
+      }
+
+      const zone = options.zone || session.vmZone || "europe-west1-b";
+      const vmName = session.vmName;
+
+      console.log(`\n  🔗 Connecting to Claude Code on ${vmName}...`);
+      console.log("  " + "-".repeat(40));
+      console.log(`  VM:     ${vmName}`);
+      console.log(`  Zone:   ${zone}`);
+      console.log(`  Status: ${session.vmStatus}`);
+      if (session.authStatus) {
+        console.log(`  Auth:   ${session.authStatus}`);
+      }
+      console.log("");
+
+      // Build SSH command
+      const sshArgs = [
+        "compute", "ssh", vmName,
+        `--zone=${zone}`,
+      ];
+
+      if (options.attach) {
+        // Attach to existing tmux session
+        sshArgs.push("--command=tmux attach-session -t main || tmux new-session -s main");
+        console.log("  Attaching to tmux session 'main'...\n");
+      } else {
+        // Just SSH in
+        console.log("  Opening SSH shell...\n");
+        console.log("  Tip: Run 'tmux attach -t main' to see Claude Code output");
+        console.log("");
+      }
+
+      // Execute SSH
+      const result = spawnSync("gcloud", sshArgs, {
+        stdio: "inherit",
+      });
+
+      if (result.status !== 0) {
+        console.error("\nSSH connection failed");
+        process.exit(1);
+      }
+    } catch (error) {
+      console.error("Error connecting to VM:", error);
+      process.exit(1);
+    }
+  });
+
+// husky vm send-message <sessionId> <message>
+vmCommand
+  .command("send-message <sessionId> <message>")
+  .description("Send a message directly to a VM agent")
+  .option("--sender <name>", "Sender name", "CLI User")
+  .option("--email <email>", "Sender email")
+  .option("--thread <name>", "Thread name for context")
+  .option("--json", "Output as JSON")
+  .action(async (sessionId, message, options) => {
+    const config = ensureConfig();
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/vm-sessions/${sessionId}/send-message`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          content: message,
+          senderName: options.sender,
+          senderEmail: options.email,
+          threadName: options.thread,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`API error: ${res.status} - ${error}`);
+      }
+
+      const data = await res.json() as {
+        success: boolean;
+        messageId: string;
+        message: string;
+      };
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
+
+      console.log(`✅ ${data.message}`);
+      console.log(`   Message ID: ${data.messageId}`);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      process.exit(1);
+    }
+  });
+
+// husky vm messages <sessionId>
+vmCommand
+  .command("messages <sessionId>")
+  .description("List messages sent to a VM session")
+  .option("--limit <n>", "Number of messages", "20")
+  .option("--status <status>", "Filter by status (pending, delivered, failed)")
+  .option("--json", "Output as JSON")
+  .action(async (sessionId, options) => {
+    const config = ensureConfig();
+
+    try {
+      const params = new URLSearchParams();
+      if (options.limit) params.set("limit", options.limit);
+      if (options.status) params.set("status", options.status);
+
+      const res = await fetch(
+        `${config.apiUrl}/api/vm-sessions/${sessionId}/messages?${params}`,
+        {
+          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        }
+      );
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`API error: ${res.status} - ${error}`);
+      }
+
+      const data = await res.json() as {
+        messages: Array<{
+          id: string;
+          content: string;
+          senderName: string;
+          status: string;
+          createdAt: string;
+        }>;
+      };
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+        return;
+      }
+
+      if (!data.messages || data.messages.length === 0) {
+        console.log("\n  No messages found for this VM session.");
+        return;
+      }
+
+      console.log("\n  VM Session Messages");
+      console.log("  " + "-".repeat(60));
+
+      for (const msg of data.messages) {
+        const time = new Date(msg.createdAt).toLocaleTimeString();
+        const statusIcon = msg.status === "delivered" ? "✅" : msg.status === "failed" ? "❌" : "⏳";
+        console.log(`  ${statusIcon} [${time}] ${msg.senderName}`);
+        console.log(`     ${msg.content.substring(0, 60)}${msg.content.length > 60 ? "..." : ""}`);
+        console.log("");
+      }
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      process.exit(1);
+    }
+  });

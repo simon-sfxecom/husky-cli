@@ -76,6 +76,23 @@ function uploadToGCS(localPath: string, gcsPath: string): { success: boolean; ur
   return { success: false, url: "" };
 }
 
+// Helper: Fetch secret from GCP Secret Manager
+async function fetchSecret(secretName: string): Promise<string> {
+  const result = runCommand("gcloud", [
+    "secrets", "versions", "access", "latest",
+    "--secret", secretName,
+  ]);
+  if (!result.success) {
+    throw new Error(`Failed to fetch secret ${secretName}: ${result.stderr}`);
+  }
+  return result.stdout.trim();
+}
+
+// Helper: Sleep function
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // husky e2e run <task-id>
 e2eCommand
   .command("run <taskId>")
@@ -85,18 +102,51 @@ e2eCommand
   .option("--browser <browser>", "Browser to use (chromium, firefox, webkit)", "chromium")
   .option("--timeout <ms>", "Test timeout in milliseconds", "60000")
   .option("--output <dir>", "Output directory for results")
+  .option("--retries <count>", "Number of retries for failed tests", "0")
+  .option("--secret <names...>", "Secrets to fetch from GCP Secret Manager")
+  .option("--env <values...>", "Environment variables (KEY=value)")
   .option("--json", "Output as JSON")
   .action(async (taskId, options) => {
-    requireAnyPermission(["task:e2e", "deploy:sandbox", "e2e:*"]);
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
 
     const config = ensureConfig();
     const timestamp = generateTimestamp();
     const outputDir = options.output || `/tmp/e2e-${taskId}-${timestamp}`;
+    const maxRetries = parseInt(options.retries, 10);
+
+    // Inject secrets from GCP Secret Manager
+    if (options.secret && options.secret.length > 0) {
+      console.log(`\n  Loading secrets from GCP...`);
+      for (const secretName of options.secret) {
+        try {
+          const value = await fetchSecret(secretName);
+          process.env[secretName] = value;
+          console.log(`  ✓ ${secretName} loaded`);
+        } catch (error) {
+          console.error(`  ✗ Failed to load ${secretName}:`, (error as Error).message);
+          process.exit(1);
+        }
+      }
+    }
+
+    // Inject environment variables
+    if (options.env && options.env.length > 0) {
+      console.log(`\n  Setting environment variables...`);
+      for (const envPair of options.env) {
+        const [key, ...valueParts] = envPair.split("=");
+        const value = valueParts.join("=");
+        process.env[key] = value;
+        console.log(`  ✓ ${key} set`);
+      }
+    }
 
     console.log(`\n  E2E Tests for Task: ${taskId}\n`);
     console.log(`  Output directory: ${outputDir}`);
     console.log(`  Browser: ${options.browser}`);
     console.log(`  Headless: ${!options.headed}`);
+    if (maxRetries > 0) {
+      console.log(`  Retries: ${maxRetries}`);
+    }
     console.log("");
 
     // Create output directory
@@ -154,9 +204,32 @@ e2eCommand
       playwrightArgs.push(`--project=${options.browser}`);
     }
 
-    const result = runCommand("npx", ["playwright", ...playwrightArgs], {
-      timeout: parseInt(options.timeout, 10) * 2, // Allow 2x timeout for test suite
-    });
+    // Run tests with retry logic
+    let result = { stdout: "", stderr: "", success: false };
+    let attempts = 0;
+
+    while (attempts <= maxRetries) {
+      attempts++;
+      if (attempts > 1) {
+        console.log(`\n  Retry ${attempts - 1}/${maxRetries}...\n`);
+        await sleep(5000); // Wait 5 seconds before retry
+      }
+
+      result = runCommand("npx", ["playwright", ...playwrightArgs], {
+        timeout: parseInt(options.timeout, 10) * 2, // Allow 2x timeout for test suite
+      });
+
+      if (result.success) {
+        break;
+      }
+
+      // Capture failure screenshot on last attempt
+      if (attempts > maxRetries) {
+        console.log("  Capturing failure screenshot...");
+        const failScreenshot = path.join(outputDir, `failure-${timestamp}.png`);
+        // Note: Playwright already captures screenshots on failure with --screenshot=on
+      }
+    }
 
     const testResult = {
       taskId,
@@ -214,7 +287,7 @@ e2eCommand
   .option("--video", "Record video of the session")
   .option("--json", "Output as JSON")
   .action(async (url, options) => {
-    requireAnyPermission(["task:e2e", "deploy:sandbox", "e2e:*"]);
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
 
     const timestamp = generateTimestamp();
     const outputFile = options.output || `/tmp/e2e-recording-${timestamp}.ts`;
@@ -301,7 +374,7 @@ e2eCommand
   .option("--type <type>", "File type (screenshot, video, recording, report)", "file")
   .option("--json", "Output as JSON")
   .action(async (file, options) => {
-    requireAnyPermission(["task:e2e", "deploy:sandbox", "e2e:*"]);
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
 
     if (!fs.existsSync(file)) {
       console.error(`Error: File not found: ${file}`);
@@ -357,7 +430,7 @@ e2eCommand
   .option("--upload", "Upload screenshot to GCS")
   .option("--json", "Output as JSON")
   .action(async (url, options) => {
-    requireAnyPermission(["task:e2e", "deploy:sandbox", "e2e:*"]);
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
 
     const timestamp = generateTimestamp();
     const defaultFilename = `screenshot-${timestamp}.png`;
@@ -472,7 +545,7 @@ e2eCommand
   .option("--limit <n>", "Limit number of results", "20")
   .option("--json", "Output as JSON")
   .action(async (options) => {
-    requireAnyPermission(["task:e2e", "deploy:sandbox", "e2e:*"]);
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
 
     let gcsPath = `gs://${GCS_BUCKET}/e2e/`;
     if (options.task) {
@@ -546,7 +619,7 @@ e2eCommand
   .option("--older-than <days>", "Remove artifacts older than N days", "7")
   .option("--dry-run", "Show what would be deleted without deleting")
   .action(async (options) => {
-    requireAnyPermission(["task:e2e", "deploy:sandbox", "e2e:*"]);
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
 
     console.log(`\n  Cleaning E2E Artifacts\n`);
 
@@ -592,4 +665,215 @@ e2eCommand
     console.log("");
     console.log(`  ${options.dryRun ? "Would clean" : "Cleaned"}: ${cleaned} items (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
     console.log("");
+  });
+
+// husky e2e inbox - List E2E inbox messages
+e2eCommand
+  .command("inbox")
+  .description("List E2E inbox messages from API")
+  .option("--status <status>", "Filter by status (pending, running, completed, failed)")
+  .option("--task <taskId>", "Filter by task ID")
+  .option("--limit <n>", "Limit number of results", "50")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
+
+    const config = ensureConfig();
+
+    const params = new URLSearchParams();
+    if (options.status) params.set("status", options.status);
+    if (options.task) params.set("taskId", options.task);
+    if (options.limit) params.set("limit", options.limit);
+
+    const url = `${config.apiUrl}/api/e2e/inbox?${params.toString()}`;
+
+    try {
+      const res = await fetch(url, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        console.error(`Error: ${res.status} ${res.statusText}`);
+        process.exit(1);
+      }
+
+      const inbox = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(inbox, null, 2));
+        return;
+      }
+
+      console.log(`\n  E2E Inbox (${inbox.length} items)\n`);
+
+      if (inbox.length === 0) {
+        console.log("  No E2E inbox messages found.");
+        console.log("");
+        return;
+      }
+
+      console.log("  " + "-".repeat(80));
+      console.log(`  ${"STATUS".padEnd(12)} ${"TASK ID".padEnd(24)} TITLE`);
+      console.log("  " + "-".repeat(80));
+
+      for (const item of inbox) {
+        const statusIcons: Record<string, string> = {
+          pending: "⏳",
+          running: "🔄",
+          completed: "✅",
+          failed: "❌",
+        };
+        const statusIcon = statusIcons[item.status as string] || "❓";
+
+        console.log(
+          `  ${statusIcon} ${(item.status as string).padEnd(10)} ${(item.taskId as string).padEnd(24)} ${(item.taskTitle as string)?.slice(0, 40) || "N/A"}`
+        );
+      }
+
+      console.log("");
+    } catch (error) {
+      console.error("Error fetching E2E inbox:", (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+// husky e2e watch - Watch E2E inbox for new test requests
+e2eCommand
+  .command("watch")
+  .description("Watch E2E inbox for new test requests")
+  .option("--interval <seconds>", "Poll interval in seconds", "30")
+  .option("--once", "Process inbox once and exit")
+  .action(async (options) => {
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
+
+    const config = ensureConfig();
+    const interval = parseInt(options.interval, 10) * 1000;
+
+    console.log(`\n  E2E Inbox Watcher\n`);
+    console.log(`  API: ${config.apiUrl}`);
+    console.log(`  Poll interval: ${options.interval}s`);
+    console.log("");
+
+    const processInbox = async () => {
+      try {
+        // Fetch E2E inbox from API
+        const res = await fetch(`${config.apiUrl}/api/e2e/inbox`, {
+          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        });
+
+        if (!res.ok) {
+          console.error(`  Error fetching inbox: ${res.status}`);
+          return;
+        }
+
+        const inbox = await res.json();
+        const pending = inbox.filter((item: { status: string }) => item.status === "pending");
+
+        if (pending.length === 0) {
+          console.log(`  [${new Date().toISOString()}] No pending E2E requests`);
+          return;
+        }
+
+        console.log(`  [${new Date().toISOString()}] Found ${pending.length} pending E2E request(s)`);
+
+        for (const item of pending) {
+          console.log(`\n  Processing: ${item.taskId} - ${item.taskTitle}`);
+
+          // Update status to running
+          await fetch(`${config.apiUrl}/api/e2e/inbox/${item.id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({ status: "running" }),
+          });
+
+          // Run E2E tests for this task
+          const timestamp = generateTimestamp();
+          const outputDir = `/tmp/e2e-${item.taskId}-${timestamp}`;
+
+          console.log(`  Running tests in ${outputDir}...`);
+
+          const playwrightArgs = [
+            "test",
+            "--reporter=list",
+            `--output=${outputDir}`,
+            "--timeout=60000",
+          ];
+
+          const result = runCommand("npx", ["playwright", ...playwrightArgs], {
+            timeout: 300000, // 5 min
+          });
+
+          // Upload results
+          const resultsPath = path.join(outputDir, "results.json");
+          const testResult = {
+            taskId: item.taskId,
+            success: result.success,
+            timestamp,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          };
+
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+          }
+          fs.writeFileSync(resultsPath, JSON.stringify(testResult, null, 2));
+
+          const gcsPath = `e2e/${item.taskId}/${timestamp}/results.json`;
+          const uploadResult = uploadToGCS(resultsPath, gcsPath);
+
+          // Update inbox status
+          await fetch(`${config.apiUrl}/api/e2e/inbox/${item.id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+              status: result.success ? "completed" : "failed",
+              completedAt: new Date().toISOString(),
+              result: {
+                passed: result.success,
+                gcsUrl: uploadResult.url,
+              },
+            }),
+          });
+
+          // Update task status via API
+          const taskEndpoint = result.success
+            ? `${config.apiUrl}/api/tasks/${item.taskId}/e2e/pass`
+            : `${config.apiUrl}/api/tasks/${item.taskId}/e2e/fail`;
+
+          await fetch(taskEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            },
+            body: JSON.stringify({
+              notes: result.success ? "E2E tests passed" : "E2E tests failed",
+              testResults: testResult,
+              screenshots: uploadResult.url ? [uploadResult.url] : [],
+            }),
+          });
+
+          console.log(`  ${result.success ? "✓" : "✗"} Task ${item.taskId}: ${result.success ? "PASSED" : "FAILED"}`);
+        }
+      } catch (error) {
+        console.error(`  Error processing inbox:`, (error as Error).message);
+      }
+    };
+
+    // Process once or continuously
+    if (options.once) {
+      await processInbox();
+    } else {
+      console.log("  Watching for E2E requests... (Ctrl+C to stop)\n");
+      while (true) {
+        await processInbox();
+        await sleep(interval);
+      }
+    }
   });

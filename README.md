@@ -111,6 +111,34 @@ husky vm update <session-id> --status approved
 husky vm delete <session-id>
 ```
 
+### E2E Testing (E2E Agent)
+
+```bash
+# Run E2E tests for a task
+husky e2e run <task-id>
+husky e2e run <task-id> --secret ADMIN_PASSWORD --retries 2
+husky e2e run <task-id> --env TEST_USER=admin --headed
+
+# E2E Inbox (pending test requests)
+husky e2e inbox                          # List all inbox messages
+husky e2e inbox --status pending         # Filter by status
+husky e2e inbox --task <task-id>         # Filter by task
+
+# Watch for new E2E requests (auto-processing)
+husky e2e watch --interval 30
+husky e2e watch --once                   # Process once and exit
+
+# Browser automation utilities
+husky e2e screenshot <url>               # Take screenshot
+husky e2e screenshot <url> --upload      # Upload to GCS
+husky e2e record <url>                   # Record browser session
+
+# Artifact management
+husky e2e upload <file> --task <id>      # Upload to GCS
+husky e2e list --task <id>               # List artifacts
+husky e2e clean --older-than 7           # Clean old artifacts
+```
+
 ### Business Strategy
 
 ```bash
@@ -295,6 +323,20 @@ husky --version
 ```
 
 ## Changelog
+
+### v1.7.0 (2026-01-11) - E2E Agent Production Ready
+
+**New Features:**
+- `husky e2e inbox` - List E2E test requests from API
+- `husky e2e watch` - Watch for and auto-process E2E requests
+- `husky e2e run --secret` - Inject secrets from GCP Secret Manager
+- `husky e2e run --env` - Set environment variables for tests
+- `husky e2e run --retries` - Retry failed tests automatically
+
+**Improvements:**
+- All artifact URLs now use HTTPS
+- Better error handling in E2E commands
+- Updated permissions for e2e_agent role
 
 ### v1.1.0 (2026-01-09) - Unified Reply System
 

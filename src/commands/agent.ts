@@ -553,6 +553,52 @@ agentCommand
     }
   });
 
+// husky agent qa-review
+agentCommand
+  .command("qa-review <taskId>")
+  .description("Trigger QA review for a task")
+  .option("--pr <url>", "PR URL to review")
+  .option("--json", "Output as JSON")
+  .action(async (taskId: string, options: { pr?: string; json?: boolean }) => {
+    const config = getConfig();
+    if (!config.apiUrl) {
+      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/assign-reviewer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          prUrl: options.pr,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        console.error(`Error assigning reviewer: ${res.status} - ${error}`);
+        process.exit(1);
+      }
+
+      const data = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(data, null, 2));
+      } else {
+        console.log(`\n✓ Task ${taskId} assigned to reviewer`);
+        console.log(`  Inbox ID: ${data.inboxId}`);
+        console.log(`  Message:  ${data.message}`);
+      }
+    } catch (error) {
+      console.error("Error triggering QA review:", error);
+      process.exit(1);
+    }
+  });
+
 // husky agent register
 agentCommand
   .command("register")
