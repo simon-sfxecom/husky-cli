@@ -7,8 +7,37 @@ import { sanitizeForEmbedding } from './pii-filter.js';
 const DEFAULT_COLLECTION = 'agent-memories';
 const VECTOR_SIZE = 768;
 
-export const AGENT_TYPES = ['support', 'claude', 'gotess', 'supervisor', 'worker', 'reviewer', 'e2e_agent', 'pr_agent'] as const;
+export const AGENT_TYPES = ['admin', 'supervisor', 'support', 'worker', 'reviewer', 'e2e_agent', 'pr_agent', 'purchasing', 'ops'] as const;
 export type AgentType = typeof AGENT_TYPES[number];
+
+export const KNOWLEDGE_BASES = ['secondbrain', 'supplier-products', 'customer-insights', 'process-sops'] as const;
+export type KnowledgeBase = typeof KNOWLEDGE_BASES[number];
+
+export const ROLE_KB_ACCESS: Record<AgentType, readonly KnowledgeBase[]> = {
+    admin: ['secondbrain', 'supplier-products', 'customer-insights', 'process-sops'],
+    supervisor: ['secondbrain', 'supplier-products', 'customer-insights', 'process-sops'],
+    support: ['customer-insights', 'supplier-products', 'process-sops'],
+    purchasing: ['supplier-products', 'process-sops'],
+    ops: ['supplier-products', 'process-sops'],
+    worker: [],
+    reviewer: [],
+    e2e_agent: [],
+    pr_agent: [],
+};
+
+export function isValidKnowledgeBase(value: string | undefined): value is KnowledgeBase {
+    return value !== undefined && KNOWLEDGE_BASES.includes(value as KnowledgeBase);
+}
+
+export function canAccessKnowledgeBase(agentType: AgentType | undefined, kb: KnowledgeBase): boolean {
+    if (!agentType) return false;
+    return ROLE_KB_ACCESS[agentType]?.includes(kb) ?? false;
+}
+
+export function getAccessibleKnowledgeBases(agentType: AgentType | undefined): readonly KnowledgeBase[] {
+    if (!agentType) return [];
+    return ROLE_KB_ACCESS[agentType] ?? [];
+}
 
 export type MemoryVisibility = 'private' | 'team' | 'public';
 
@@ -45,6 +74,7 @@ export interface AgentBrainOptions {
     agentId: string;
     agentType?: AgentType;
     projectId?: string;
+    collectionName?: string;
 }
 
 export function isValidAgentType(value: string | undefined): value is AgentType {
@@ -71,6 +101,7 @@ export class AgentBrain {
     private embeddings: EmbeddingService;
     private agentId: string;
     private agentType?: AgentType;
+    private collectionNameOverride?: string;
 
     constructor(agentIdOrOptions: string | AgentBrainOptions, projectId?: string) {
         let options: AgentBrainOptions;
@@ -84,6 +115,7 @@ export class AgentBrain {
         
         this.agentId = options.agentId;
         this.agentType = options.agentType || getAgentType();
+        this.collectionNameOverride = options.collectionName;
         
         this.qdrant = QdrantClient.fromConfig();
         
@@ -104,6 +136,7 @@ export class AgentBrain {
     }
 
     private getCollectionName(): string {
+        if (this.collectionNameOverride) return this.collectionNameOverride;
         if (!this.agentType) return DEFAULT_COLLECTION;
         return `${this.agentType}-memories`;
     }
@@ -651,6 +684,58 @@ export class AgentBrain {
         }
 
         return toPurge.length;
+    }
+}
+
+export class KnowledgeBaseBrain {
+    private brain: AgentBrain;
+    private kb: KnowledgeBase;
+    private agentType: AgentType;
+
+    constructor(agentType: AgentType, kb: KnowledgeBase, agentId: string = 'default') {
+        if (!canAccessKnowledgeBase(agentType, kb)) {
+            throw new Error(`Access denied to knowledge base '${kb}'`);
+        }
+
+        this.agentType = agentType;
+        this.kb = kb;
+        this.brain = new AgentBrain({ 
+            agentId, 
+            agentType,
+            collectionName: `${kb}-kb`
+        });
+    }
+
+    getCollectionName(): string {
+        return `${this.kb}-kb`;
+    }
+
+    async remember(content: string, tags: string[] = [], metadata?: Record<string, unknown>): Promise<string> {
+        return this.brain.remember(content, tags, { ...metadata, knowledgeBase: this.kb, sourceAgent: this.agentType }, 'team', false);
+    }
+
+    async recall(query: string, limit: number = 5, minScore: number = 0.5): Promise<RecallResult[]> {
+        return this.brain.recall(query, limit, minScore);
+    }
+
+    async list(limit: number = 20): Promise<Memory[]> {
+        return this.brain.listMemories(limit);
+    }
+
+    async forget(memoryId: string): Promise<void> {
+        return this.brain.forget(memoryId);
+    }
+
+    async stats(): Promise<{ count: number; tags: Record<string, number> }> {
+        return this.brain.stats();
+    }
+
+    getInfo(): { agentType: AgentType; knowledgeBase: KnowledgeBase; collectionName: string } {
+        return {
+            agentType: this.agentType,
+            knowledgeBase: this.kb,
+            collectionName: this.getCollectionName(),
+        };
     }
 }
 

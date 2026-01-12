@@ -1,12 +1,35 @@
 import { Command } from "commander";
-import { AgentBrain, AGENT_TYPES, AgentType, isValidAgentType } from "../lib/biz/agent-brain.js";
+import { AgentBrain, AGENT_TYPES, AgentType, isValidAgentType, KNOWLEDGE_BASES, KnowledgeBase, isValidKnowledgeBase, KnowledgeBaseBrain, getAccessibleKnowledgeBases, getAgentType } from "../lib/biz/agent-brain.js";
 import { generateSOP, formatSOPAsMarkdown } from "../lib/biz/sop-generator.js";
+import { ApiBrain, shouldUseApi } from "../lib/biz/api-brain.js";
 
 const DEFAULT_AGENT = process.env.HUSKY_AGENT_ID || 'default';
 
-function createBrain(agentId: string, agentType?: string): AgentBrain {
+function toDate(value: Date | string): Date {
+    return value instanceof Date ? value : new Date(value);
+}
+
+function createBrain(agentId: string, agentType?: string, options?: { useApi?: boolean; kb?: string }): AgentBrain | ApiBrain {
+    if (options?.useApi || (shouldUseApi() && options?.kb)) {
+        return new ApiBrain({
+            agentId,
+            agentType: isValidAgentType(agentType) ? agentType : undefined,
+            knowledgeBase: options?.kb,
+        });
+    }
     const validAgentType = isValidAgentType(agentType) ? agentType : undefined;
     return new AgentBrain({ agentId, agentType: validAgentType });
+}
+
+function createKBBrain(kb: string, agentType?: string, agentId: string = DEFAULT_AGENT): KnowledgeBaseBrain {
+    const resolvedAgentType = isValidAgentType(agentType) ? agentType : getAgentType();
+    if (!resolvedAgentType) {
+        throw new Error(`Agent type required for knowledge base access. Set HUSKY_AGENT_TYPE or use --agent-type`);
+    }
+    if (!isValidKnowledgeBase(kb)) {
+        throw new Error(`Invalid knowledge base '${kb}'. Available: ${KNOWLEDGE_BASES.join(', ')}`);
+    }
+    return new KnowledgeBaseBrain(resolvedAgentType, kb, agentId);
 }
 
 export const brainCommand = new Command("brain")
@@ -18,13 +41,28 @@ brainCommand
     .option("-a, --agent <id>", "Agent ID", DEFAULT_AGENT)
     .option("-t, --tags <tags>", "Comma-separated tags")
     .option("--agent-type <type>", `Agent type for database selection (${AGENT_TYPES.join(", ")})`)
+    .option("--kb <name>", `Knowledge base to use (${KNOWLEDGE_BASES.join(", ")})`)
     .option("--visibility <level>", "Visibility level (private, team, public)", "private")
     .option("--allow-pii", "Skip PII filtering (use only for technical/internal content)")
     .option("--json", "Output as JSON")
     .action(async (content, options) => {
         try {
-            const brain = createBrain(options.agent, options.agentType);
             const tags = options.tags ? options.tags.split(",").map((t: string) => t.trim()) : [];
+            
+            if (options.kb) {
+                const kbBrain = createKBBrain(options.kb, options.agentType, options.agent);
+                const info = kbBrain.getInfo();
+                console.log(`  Storing in knowledge base: ${info.knowledgeBase} (${info.collectionName})...`);
+                const id = await kbBrain.remember(content, tags);
+                if (options.json) {
+                    console.log(JSON.stringify({ success: true, id, knowledgeBase: info.knowledgeBase, collection: info.collectionName }));
+                } else {
+                    console.log(`  ✓ Stored in ${info.knowledgeBase}: ${id}`);
+                }
+                return;
+            }
+
+            const brain = createBrain(options.agent, options.agentType);
             const visibility = options.visibility as "private" | "team" | "public";
             const dbInfo = brain.getDatabaseInfo();
 
@@ -54,16 +92,40 @@ brainCommand
     .option("-l, --limit <num>", "Max results", "5")
     .option("-m, --min-score <score>", "Minimum similarity score (0-1)", "0.5")
     .option("--agent-type <type>", `Agent type for database selection (${AGENT_TYPES.join(", ")})`)
+    .option("--kb <name>", `Knowledge base to search (${KNOWLEDGE_BASES.join(", ")})`)
     .option("--shared", "Search shared memories from other agents")
     .option("--public-only", "Search only public memories (requires --shared)")
     .option("--json", "Output as JSON")
     .action(async (query, options) => {
         try {
+            if (options.kb) {
+                const kbBrain = createKBBrain(options.kb, options.agentType, options.agent);
+                const info = kbBrain.getInfo();
+                console.log(`  Searching knowledge base: ${info.knowledgeBase}...`);
+                const results = await kbBrain.recall(query, parseInt(options.limit, 10), parseFloat(options.minScore));
+                
+                if (options.json) {
+                    console.log(JSON.stringify({ success: true, query, knowledgeBase: info.knowledgeBase, results }));
+                    return;
+                }
+
+                console.log(`\n  📚 Knowledge Base: ${info.knowledgeBase} (${results.length} found)\n`);
+                if (results.length === 0) {
+                    console.log(`  No results found.`);
+                    return;
+                }
+                for (const r of results) {
+                    const tags = r.memory.tags.length > 0 ? ` [${r.memory.tags.join(", ")}]` : "";
+                    console.log(`  [${(r.score * 100).toFixed(1)}%] ${r.memory.content.slice(0, 80)}${tags}`);
+                }
+                console.log("");
+                return;
+            }
+
             const brain = createBrain(options.agent, options.agentType);
 
             let results;
             if (options.shared) {
-                // Search shared memories
                 results = await brain.recallShared(
                     query,
                     parseInt(options.limit, 10),
@@ -71,7 +133,6 @@ brainCommand
                     options.publicOnly
                 );
             } else {
-                // Search personal memories
                 const dbInfo = brain.getDatabaseInfo();
                 console.log(`  Searching memories for: "${query}" (db: ${dbInfo.databaseName})...`);
                 results = await brain.recall(
@@ -134,7 +195,7 @@ brainCommand
             }
             
             for (const m of memories) {
-                const date = m.createdAt.toLocaleDateString("de-DE");
+                const date = toDate(m.createdAt).toLocaleDateString("de-DE");
                 const tags = m.tags.length > 0 ? ` [${m.tags.join(", ")}]` : "";
                 console.log(`  ${date} │ ${m.content.slice(0, 60)}...${tags}`);
             }
@@ -448,7 +509,7 @@ brainCommand
             if (toArchive.length > 0) {
                 console.log(`\n  Memories:`);
                 for (const m of toArchive.slice(0, 10)) {
-                    const age = Math.floor((Date.now() - m.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+                    const age = Math.floor((Date.now() - toDate(m.createdAt).getTime()) / (1000 * 60 * 60 * 24));
                     console.log(`    ${m.id.slice(0, 8)} │ ${m.content.slice(0, 50)}... (${age}d old, Q: ${m.qualityScore?.toFixed(2)})`);
                 }
                 if (toArchive.length > 10) {
@@ -533,6 +594,81 @@ brainCommand
             } else {
                 console.log(markdown);
             }
+        } catch (error) {
+            console.error("Error:", (error as Error).message);
+            process.exit(1);
+        }
+    });
+
+// ============================================================================
+// Knowledge Base Commands
+// ============================================================================
+
+brainCommand
+    .command("kb-list")
+    .description("List available knowledge bases and your access")
+    .option("--agent-type <type>", `Agent type (${AGENT_TYPES.join(", ")})`)
+    .option("--json", "Output as JSON")
+    .action(async (options) => {
+        try {
+            const agentType = isValidAgentType(options.agentType) ? options.agentType : getAgentType();
+            const accessible = agentType ? getAccessibleKnowledgeBases(agentType) : [];
+
+            if (options.json) {
+                console.log(JSON.stringify({
+                    agentType: agentType || null,
+                    knowledgeBases: KNOWLEDGE_BASES,
+                    accessible,
+                }));
+                return;
+            }
+
+            console.log(`\n  📚 Knowledge Bases`);
+            console.log(`  ────────────────────────────────`);
+            console.log(`  Your role: ${agentType || '(not set)'}\n`);
+
+            for (const kb of KNOWLEDGE_BASES) {
+                const hasAccess = accessible.includes(kb);
+                const icon = hasAccess ? '✓' : '✗';
+                const color = hasAccess ? '' : ' (no access)';
+                console.log(`  ${icon} ${kb}${color}`);
+            }
+            console.log("");
+        } catch (error) {
+            console.error("Error:", (error as Error).message);
+            process.exit(1);
+        }
+    });
+
+brainCommand
+    .command("kb-stats <kb>")
+    .description("Show statistics for a knowledge base")
+    .option("--agent-type <type>", `Agent type (${AGENT_TYPES.join(", ")})`)
+    .option("--json", "Output as JSON")
+    .action(async (kb, options) => {
+        try {
+            const kbBrain = createKBBrain(kb, options.agentType);
+            const info = kbBrain.getInfo();
+            const stats = await kbBrain.stats();
+
+            if (options.json) {
+                console.log(JSON.stringify({ success: true, ...info, ...stats }));
+                return;
+            }
+
+            console.log(`\n  📚 Knowledge Base: ${info.knowledgeBase}`);
+            console.log(`  ────────────────────────────────`);
+            console.log(`  Collection: ${info.collectionName}`);
+            console.log(`  Total entries: ${stats.count}`);
+
+            if (Object.keys(stats.tags).length > 0) {
+                console.log(`\n  Tags:`);
+                const sortedTags = Object.entries(stats.tags).sort((a, b) => b[1] - a[1]);
+                for (const [tag, count] of sortedTags.slice(0, 10)) {
+                    console.log(`    ${tag}: ${count}`);
+                }
+            }
+            console.log("");
         } catch (error) {
             console.error("Error:", (error as Error).message);
             process.exit(1);
