@@ -513,8 +513,11 @@ export class AgentBrain {
         const now = Date.now();
         const ageDays = (now - createdAt.getTime()) / (1000 * 60 * 60 * 24);
 
-        // Exponential decay with 30-day half-life
-        const decayFactor = Math.pow(0.5, ageDays / 30);
+        // Exponential decay with agent-type-specific half-life
+        // Support agents: 14-day half-life (faster decay for time-sensitive support knowledge)
+        // Other agents: 30-day half-life (standard decay)
+        const halfLifeDays = this.agentType === 'support' ? 14 : 30;
+        const decayFactor = Math.pow(0.5, ageDays / halfLifeDays);
 
         // Recall boost (logarithmic)
         const recallBoost = Math.log2(recallCount + 1) * 0.1;
@@ -529,7 +532,7 @@ export class AgentBrain {
     /**
      * Archive low-quality memories
      */
-    async cleanup(dryRun: boolean = true, threshold: number = 0.1, minAgeDays: number = 90): Promise<Memory[]> {
+    async cleanup(dryRun: boolean = true, threshold: number = 0.1, minAgeDays: number = 90, tags?: string[]): Promise<Memory[]> {
         await this.ensureCollection();
 
         const filter = {
@@ -541,6 +544,16 @@ export class AgentBrain {
 
         if (this.agentType) {
             filter.must.push({ key: 'agentType', match: { value: this.agentType } } as typeof filter.must[0]);
+        }
+
+        // Add tag filter if specified
+        if (tags && tags.length > 0) {
+            (filter.must as Array<Record<string, unknown>>).push({
+                should: tags.map(tag => ({
+                    key: 'tags',
+                    match: { any: [tag] }
+                }))
+            });
         }
 
         const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {

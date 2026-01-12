@@ -54,34 +54,52 @@ brainCommand
     .option("-l, --limit <num>", "Max results", "5")
     .option("-m, --min-score <score>", "Minimum similarity score (0-1)", "0.5")
     .option("--agent-type <type>", `Agent type for database selection (${AGENT_TYPES.join(", ")})`)
+    .option("--shared", "Search shared memories from other agents")
+    .option("--public-only", "Search only public memories (requires --shared)")
     .option("--json", "Output as JSON")
     .action(async (query, options) => {
         try {
             const brain = createBrain(options.agent, options.agentType);
-            const dbInfo = brain.getDatabaseInfo();
-            
-            console.log(`  Searching memories for: "${query}" (db: ${dbInfo.databaseName})...`);
-            const results = await brain.recall(
-                query, 
-                parseInt(options.limit, 10),
-                parseFloat(options.minScore)
-            );
-            
+
+            let results;
+            if (options.shared) {
+                // Search shared memories
+                results = await brain.recallShared(
+                    query,
+                    parseInt(options.limit, 10),
+                    parseFloat(options.minScore),
+                    options.publicOnly
+                );
+            } else {
+                // Search personal memories
+                const dbInfo = brain.getDatabaseInfo();
+                console.log(`  Searching memories for: "${query}" (db: ${dbInfo.databaseName})...`);
+                results = await brain.recall(
+                    query,
+                    parseInt(options.limit, 10),
+                    parseFloat(options.minScore)
+                );
+            }
+
             if (options.json) {
-                console.log(JSON.stringify({ success: true, query, database: dbInfo.databaseName, results }));
+                const dbInfo = brain.getDatabaseInfo();
+                console.log(JSON.stringify({ success: true, query, database: dbInfo.databaseName, shared: options.shared || false, results }));
                 return;
             }
-            
-            console.log(`\n  🧠 Memories for "${query}" (${results.length} found)\n`);
-            
+
+            const icon = options.shared ? '🌐' : '🧠';
+            const label = options.shared ? 'Shared Memories' : 'Memories';
+            console.log(`\n  ${icon} ${label} for "${query}" (${results.length} found)\n`);
+
             if (results.length === 0) {
-                console.log("  No relevant memories found.");
+                console.log(`  No relevant ${options.shared ? 'shared ' : ''}memories found.`);
                 return;
             }
-            
+
             for (const r of results) {
                 const tags = r.memory.tags.length > 0 ? ` [${r.memory.tags.join(", ")}]` : "";
-                console.log(`  [${(r.score * 100).toFixed(1)}%] ${r.memory.content.slice(0, 80)}${tags}`);
+                const visibility = options.shared && r.memory.visibility ? ` [${r.memory.visibility}]` : "";
+                console.log(`  [${(r.score * 100).toFixed(1)}%]${visibility} ${r.memory.content.slice(0, 80)}${tags}`);
             }
             console.log("");
         } catch (error) {
@@ -329,48 +347,6 @@ brainCommand
         }
     });
 
-brainCommand
-    .command("recall-shared <query>")
-    .description("Search shared memories from other agents")
-    .option("-a, --agent <id>", "Agent ID", DEFAULT_AGENT)
-    .option("-l, --limit <num>", "Max results", "5")
-    .option("-m, --min-score <score>", "Minimum similarity score (0-1)", "0.5")
-    .option("--agent-type <type>", `Agent type for database selection (${AGENT_TYPES.join(", ")})`)
-    .option("--public-only", "Search only public memories")
-    .option("--json", "Output as JSON")
-    .action(async (query, options) => {
-        try {
-            const brain = createBrain(options.agent, options.agentType);
-            const results = await brain.recallShared(
-                query,
-                parseInt(options.limit, 10),
-                parseFloat(options.minScore),
-                options.publicOnly
-            );
-
-            if (options.json) {
-                console.log(JSON.stringify({ success: true, query, results }));
-                return;
-            }
-
-            console.log(`\n  🌐 Shared Memories for "${query}" (${results.length} found)\n`);
-
-            if (results.length === 0) {
-                console.log("  No relevant shared memories found.");
-                return;
-            }
-
-            for (const r of results) {
-                const visibility = r.memory.visibility || 'private';
-                console.log(`  [${(r.score * 100).toFixed(1)}%] [${visibility}] ${r.memory.content.slice(0, 80)}`);
-            }
-            console.log("");
-        } catch (error) {
-            console.error("Error:", (error as Error).message);
-            process.exit(1);
-        }
-    });
-
 // ============================================================================
 // Phase 3: Quality & Decay
 // ============================================================================
@@ -446,15 +422,18 @@ brainCommand
     .option("--execute", "Actually perform the cleanup (removes dry-run)")
     .option("--threshold <score>", "Quality threshold for archiving", "0.1")
     .option("--min-age-days <days>", "Minimum age in days", "90")
+    .option("-t, --tag <tags...>", "Filter by tags (for system migrations)")
     .option("--json", "Output as JSON")
     .action(async (options) => {
         try {
             const brain = createBrain(options.agent, options.agentType);
             const dryRun = !options.execute;
+            const tags = options.tag as string[] | undefined;
             const toArchive = await brain.cleanup(
                 dryRun,
                 parseFloat(options.threshold),
-                parseInt(options.minAgeDays, 10)
+                parseInt(options.minAgeDays, 10),
+                tags
             );
 
             if (options.json) {

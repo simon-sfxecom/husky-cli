@@ -6,6 +6,7 @@
 
 import { Command } from "commander";
 import { ZendeskClient } from "../../lib/biz/index.js";
+import { AgentBrain } from "../../lib/biz/agent-brain.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -202,9 +203,50 @@ ticketsCommand
 ticketsCommand
     .command("close <id>")
     .description("Close/solve a ticket")
-    .action(async (id) => {
+    .option("--learning", "Capture learning from ticket before closing")
+    .option("-a, --agent <id>", "Agent ID for learning capture")
+    .action(async (id, options) => {
         try {
             const client = ZendeskClient.fromConfig();
+
+            // Capture learning if flag is set
+            if (options.learning) {
+                const ticketId = parseInt(id, 10);
+                const ticket = await client.getTicket(ticketId);
+                const comments = await client.getTicketComments(ticketId);
+
+                // Build learning content from ticket and resolution
+                const learningContent = [
+                    `Ticket #${ticket.id}: ${ticket.subject}`,
+                    `Status: ${ticket.status} → solved`,
+                    `Priority: ${ticket.priority}`,
+                    `Tags: ${ticket.tags?.join(', ') || 'none'}`,
+                    '',
+                    'Resolution:',
+                    comments.slice(-3).map((c: { body: string; author_id: number }) =>
+                        `- ${c.body.substring(0, 200)}${c.body.length > 200 ? '...' : ''}`
+                    ).join('\n')
+                ].join('\n');
+
+                // Capture to Brain
+                const agentId = options.agent || process.env.HUSKY_AGENT_ID || 'support-agent';
+                const brain = new AgentBrain(agentId, 'support');
+
+                await brain.remember(
+                    learningContent,
+                    ['ticket-resolution', 'support', ...(ticket.tags || [])],
+                    {
+                        ticketId: ticket.id,
+                        subject: ticket.subject,
+                        priority: ticket.priority,
+                        closedAt: new Date().toISOString()
+                    },
+                    'private' // visibility
+                );
+
+                console.log(`  💡 Captured learning from ticket #${ticket.id}`);
+            }
+
             const ticket = await client.closeTicket(parseInt(id, 10));
             console.log(`✓ Ticket #${ticket.id} marked as solved`);
         } catch (error) {
