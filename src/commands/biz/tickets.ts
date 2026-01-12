@@ -9,6 +9,7 @@ import { ZendeskClient } from "../../lib/biz/index.js";
 import { AgentBrain } from "../../lib/biz/agent-brain.js";
 import * as fs from "fs";
 import * as path from "path";
+import { errorWithAutoHint } from "../../lib/error-hints.js";
 
 export const ticketsCommand = new Command("tickets")
     .description("Manage support tickets (Zendesk)");
@@ -176,8 +177,7 @@ ticketsCommand
             }
 
             if (Object.keys(updates).length === 0) {
-                console.error("Error: Provide --status, --priority, or --field");
-                process.exit(1);
+                errorWithAutoHint("Provide --status, --priority, or --field. Use --help for options.");
             }
 
             const ticket = await client.updateTicket(parseInt(id, 10), updates);

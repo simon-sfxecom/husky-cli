@@ -234,6 +234,20 @@ export class QdrantClient {
         });
     }
 
+    async setPayload(
+        collectionName: string,
+        pointId: string | number,
+        payload: Record<string, unknown>
+    ): Promise<void> {
+        await this.request(`/collections/${collectionName}/points/payload?wait=true`, {
+            method: 'POST',
+            body: JSON.stringify({
+                points: [pointId],
+                payload,
+            }),
+        });
+    }
+
     async count(collectionName: string): Promise<number> {
         const info = await this.getCollection(collectionName);
         return info.pointsCount;
@@ -266,22 +280,7 @@ export class QdrantClient {
         }));
     }
 
-    /**
-     * Update payload for a specific point (for quality/visibility updates)
-     */
-    async setPayload(
-        collectionName: string,
-        id: string | number,
-        payload: Record<string, unknown>
-    ): Promise<void> {
-        await this.request(`/collections/${collectionName}/points/payload?wait=true`, {
-            method: 'POST',
-            body: JSON.stringify({
-                points: [id],
-                payload,
-            }),
-        });
-    }
+    // Removed duplicate setPayload method - already defined at line 237
 }
 
 export default QdrantClient;

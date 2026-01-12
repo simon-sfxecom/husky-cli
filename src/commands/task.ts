@@ -8,6 +8,7 @@ import { WorktreeManager } from "../lib/worktree.js";
 import { execSync } from "child_process";
 import { resolveProject, fetchProjects, formatProjectList, type ResolveResult } from "../lib/project-resolver.js";
 import { requirePermission } from "../lib/permissions.js";
+import { ErrorHelpers, errorWithHint, errorWithAutoHint, ExplainTopic } from "../lib/error-hints.js";
 
 export const taskCommand = new Command("task")
   .description("Manage tasks");
@@ -16,8 +17,9 @@ export const taskCommand = new Command("task")
 function getTaskId(options: { id?: string }): string {
   const id = options.id || process.env.HUSKY_TASK_ID;
   if (!id) {
-    console.error("Error: Task ID required. Use --id or set HUSKY_TASK_ID environment variable.");
-    process.exit(1);
+    ErrorHelpers.missingTaskId();
+    // TypeScript doesn't know that ErrorHelpers.missingTaskId() never returns
+    throw new Error("unreachable");
   }
   return id;
 }
@@ -26,8 +28,9 @@ function getTaskId(options: { id?: string }): string {
 function ensureConfig() {
   const config = getConfig();
   if (!config.apiUrl) {
-    console.error("Error: API URL not configured. Run: husky config set api-url <url>");
-    process.exit(1);
+    ErrorHelpers.missingApiUrl();
+    // TypeScript doesn't know that ErrorHelpers.missingApiUrl() never returns
+    throw new Error("unreachable");
   }
   return config;
 }
@@ -136,8 +139,7 @@ taskCommand
   .action(async (options) => {
     const config = getConfig();
     if (!config.apiUrl) {
-      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
-      process.exit(1);
+      ErrorHelpers.missingApiUrl();
     }
 
     try {
@@ -152,7 +154,7 @@ taskCommand
 
       if (!options.all && !options.project) {
         const repoIdentifier = getGitRepoIdentifier();
-        if (repoIdentifier) {
+        if (repoIdentifier && config.apiUrl) {
           autoDetectedProject = await findProjectByRepo(config.apiUrl, config.apiKey, repoIdentifier);
           if (autoDetectedProject) {
             filterProjectId = autoDetectedProject.id;
@@ -239,8 +241,11 @@ taskCommand
       // Default: grouped by status (original behavior)
       printTasks(tasks);
     } catch (error) {
-      console.error("Error fetching tasks:", error);
-      process.exit(1);
+      errorWithHint(
+        `Error fetching tasks: ${error instanceof Error ? error.message : error}`,
+        ExplainTopic.TASK,
+        "Learn about task listing and management"
+      );
     }
   });
 
@@ -252,15 +257,18 @@ taskCommand
   .action(async (id, options) => {
     const config = getConfig();
     if (!config.apiUrl) {
-      console.error("Error: API URL not configured.");
-      process.exit(1);
+      ErrorHelpers.missingApiUrl();
+      throw new Error("unreachable");
     }
+
+    const apiUrl = config.apiUrl; // Type narrowing
+    const apiKey = config.apiKey || "";
 
     try {
       // Ensure worker is registered and create a session
-      const workerId = await ensureWorkerRegistered(config.apiUrl, config.apiKey || "");
+      const workerId = await ensureWorkerRegistered(apiUrl, apiKey);
       const sessionId = generateSessionId();
-      await registerSession(config.apiUrl, config.apiKey || "", workerId, sessionId);
+      await registerSession(apiUrl, apiKey, workerId, sessionId);
 
       // Create worktree for isolation (unless --no-worktree)
       let worktreeInfo: { path: string; branch: string } | null = null;
@@ -573,8 +581,11 @@ taskCommand
     }
 
     if (Object.keys(updates).length === 0) {
-      console.error("Error: No update options provided. Use --help for available options.");
-      process.exit(1);
+      errorWithHint(
+        "No update options provided. Use --help for available options.",
+        ExplainTopic.TASK,
+        "See all available update options"
+      );
     }
 
     // Auto-create worktree when starting a task (unless --no-worktree)
@@ -794,12 +805,18 @@ taskCommand
     const message = messageArg || options.message;
 
     if (!taskId) {
-      console.error("Error: Task ID required. Use positional arg, --id, or set HUSKY_TASK_ID");
-      process.exit(1);
+      errorWithHint(
+        "Task ID required. Use positional arg, --id, or set HUSKY_TASK_ID",
+        ExplainTopic.TASK,
+        "Learn about task ID usage"
+      );
     }
     if (!message) {
-      console.error("Error: Message required. Use positional arg or -m/--message");
-      process.exit(1);
+      errorWithHint(
+        "Message required. Use positional arg or -m/--message",
+        ExplainTopic.TASK,
+        "See message command examples"
+      );
     }
 
     try {

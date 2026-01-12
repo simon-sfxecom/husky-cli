@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { ErrorHelpers, errorWithHint, ExplainTopic } from "../lib/error-hints.js";
 
 const CONFIG_DIR = join(homedir(), ".husky");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
@@ -230,6 +231,7 @@ configCommand
       console.log("  Gemini:   gemini-api-key");
       console.log("  NocoDB:   nocodb-api-token, nocodb-base-url, nocodb-workspace-id");
       console.log("  Brain:    agent-type");
+      console.error("\n💡 For configuration help: husky explain config");
       process.exit(1);
     }
 
@@ -237,16 +239,22 @@ configCommand
     if (key === "api-url" || key === "billbee-base-url") {
       const validation = validateApiUrl(value);
       if (!validation.valid) {
-        console.error(`Error: ${validation.error}`);
-        process.exit(1);
+        errorWithHint(
+          validation.error || "Invalid URL",
+          ExplainTopic.CONFIG,
+          "Learn about proper URL format"
+        );
       }
     }
 
     if (key === "agent-type") {
       const validTypes = ["support", "claude", "gotess", "supervisor", "worker"];
       if (!validTypes.includes(value)) {
-        console.error(`Error: Invalid agent type. Must be one of: ${validTypes.join(", ")}`);
-        process.exit(1);
+        errorWithHint(
+          `Invalid agent type. Must be one of: ${validTypes.join(", ")}`,
+          ExplainTopic.CONFIG,
+          "See available configuration options"
+        );
       }
     }
 
@@ -297,12 +305,10 @@ configCommand
 
     // Check if configuration is complete
     if (!config.apiUrl) {
-      console.error("Error: API URL not configured. Run: husky config set api-url <url>");
-      process.exit(1);
+      ErrorHelpers.missingApiUrl();
     }
     if (!config.apiKey) {
-      console.error("Error: API key not configured. Run: husky config set api-key <key>");
-      process.exit(1);
+      ErrorHelpers.missingApiKey();
     }
 
     console.log("Testing API connection...");
@@ -310,22 +316,28 @@ configCommand
     try {
       // First test basic connectivity with /api/tasks
       const tasksUrl = new URL("/api/tasks", config.apiUrl);
+      const apiKey = config.apiKey!; // We already checked it's defined above
       const tasksRes = await fetch(tasksUrl.toString(), {
-        headers: { "x-api-key": config.apiKey },
+        headers: { "x-api-key": apiKey },
       });
 
       if (!tasksRes.ok) {
         if (tasksRes.status === 401) {
           console.error(`API connection failed: Unauthorized (HTTP 401)`);
           console.error("  Check your API key with: husky config set api-key <key>");
+          console.error("\n💡 For configuration help: husky explain config");
           process.exit(1);
         } else if (tasksRes.status === 403) {
           console.error(`API connection failed: Forbidden (HTTP 403)`);
           console.error("  Your API key may not have the required permissions");
+          console.error("\n💡 For configuration help: husky explain config");
           process.exit(1);
         } else {
-          console.error(`API connection failed: HTTP ${tasksRes.status}`);
-          process.exit(1);
+          errorWithHint(
+            `API connection failed: HTTP ${tasksRes.status}`,
+            ExplainTopic.CONFIG,
+            "Check your API configuration"
+          );
         }
       }
 
@@ -334,7 +346,7 @@ configCommand
       // Now fetch role/permissions from whoami
       const whoamiUrl = new URL("/api/auth/whoami", config.apiUrl);
       const whoamiRes = await fetch(whoamiUrl.toString(), {
-        headers: { "x-api-key": config.apiKey },
+        headers: { "x-api-key": apiKey },
       });
 
       if (whoamiRes.ok) {
@@ -359,8 +371,10 @@ configCommand
       if (error instanceof TypeError && error.message.includes("fetch")) {
         console.error(`API connection failed: Could not connect to ${config.apiUrl}`);
         console.error("  Check your API URL with: husky config set api-url <url>");
+        console.error("\n💡 For configuration help: husky explain config");
       } else {
         console.error(`API connection failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+        console.error("\n💡 For configuration help: husky explain config");
       }
       process.exit(1);
     }

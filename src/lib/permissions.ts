@@ -6,6 +6,7 @@
  */
 
 import { getConfig, hasPermission, getRole, fetchAndCacheRole, clearRoleCache } from "../commands/config.js";
+import { ExplainTopic } from "./error-hints.js";
 
 // Agent roles (must match dashboard types.ts)
 export type AgentRole =
@@ -41,6 +42,7 @@ export function requirePermission(permission: string): void {
     } else {
       console.error("Run 'husky config test' to refresh your role and permissions.");
     }
+    console.error(`\n💡 For configuration help: husky explain ${ExplainTopic.CONFIG}`);
     process.exit(1);
   }
 }
@@ -58,6 +60,7 @@ export function requireAnyPermission(permissions: string[]): void {
     if (config.role) {
       console.error(`Your role (${config.role}) does not have these permissions.`);
     }
+    console.error(`\n💡 For configuration help: husky explain ${ExplainTopic.CONFIG}`);
     process.exit(1);
   }
 }
