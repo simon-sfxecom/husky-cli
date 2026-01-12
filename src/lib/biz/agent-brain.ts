@@ -4,10 +4,10 @@ import { getConfig } from '../../commands/config.js';
 import { randomUUID } from 'crypto';
 import { sanitizeForEmbedding } from './pii-filter.js';
 
-const MEMORIES_COLLECTION = 'agent-memories';
+const DEFAULT_COLLECTION = 'agent-memories';
 const VECTOR_SIZE = 768;
 
-export const AGENT_TYPES = ['support', 'claude', 'gotess', 'supervisor', 'worker'] as const;
+export const AGENT_TYPES = ['support', 'claude', 'gotess', 'supervisor', 'worker', 'reviewer', 'e2e_agent', 'pr_agent'] as const;
 export type AgentType = typeof AGENT_TYPES[number];
 
 export type MemoryVisibility = 'private' | 'team' | 'public';
@@ -94,18 +94,26 @@ export class AgentBrain {
         });
     }
 
-    getDatabaseInfo(): { agentType?: AgentType; databaseName: string } {
+    getDatabaseInfo(): { agentType?: AgentType; databaseName: string; collectionName: string } {
+        const collectionName = this.getCollectionName();
         return {
             agentType: this.agentType,
-            databaseName: `qdrant:${MEMORIES_COLLECTION}`,
+            databaseName: `qdrant:${collectionName}`,
+            collectionName,
         };
     }
 
+    private getCollectionName(): string {
+        if (!this.agentType) return DEFAULT_COLLECTION;
+        return `${this.agentType}-memories`;
+    }
+
     private async ensureCollection(): Promise<void> {
+        const collection = this.getCollectionName();
         try {
-            await this.qdrant.getCollection(MEMORIES_COLLECTION);
+            await this.qdrant.getCollection(collection);
         } catch {
-            await this.qdrant.createCollection(MEMORIES_COLLECTION, VECTOR_SIZE);
+            await this.qdrant.createCollection(collection, VECTOR_SIZE);
         }
     }
 
@@ -123,7 +131,7 @@ export class AgentBrain {
         const id = randomUUID();
         const now = new Date().toISOString();
 
-        await this.qdrant.upsertOne(MEMORIES_COLLECTION, id, embedding, {
+        await this.qdrant.upsertOne(this.getCollectionName(), id, embedding, {
             agent: this.agentId,
             agentType: this.agentType || 'default',
             content: sanitizeResult.sanitized, // Store sanitized content
@@ -168,7 +176,7 @@ export class AgentBrain {
             filter.must.push({ key: 'agentType', match: { value: this.agentType } } as typeof filter.must[0]);
         }
         
-        const results = await this.qdrant.search(MEMORIES_COLLECTION, queryEmbedding, limit, {
+        const results = await this.qdrant.search(this.getCollectionName(), queryEmbedding, limit, {
             filter,
             scoreThreshold: minScore,
         });
@@ -207,7 +215,7 @@ export class AgentBrain {
             ]
         };
         
-        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+        const results = await this.qdrant.scroll(this.getCollectionName(), {
             filter,
             limit,
             with_payload: true,
@@ -229,7 +237,7 @@ export class AgentBrain {
 
     async forget(memoryId: string): Promise<void> {
         await this.ensureCollection();
-        await this.qdrant.deletePoints(MEMORIES_COLLECTION, [memoryId]);
+        await this.qdrant.deletePoints(this.getCollectionName(), [memoryId]);
     }
 
     async listMemories(limit: number = 20): Promise<Memory[]> {
@@ -245,7 +253,7 @@ export class AgentBrain {
             filter.must.push({ key: 'agentType', match: { value: this.agentType } } as typeof filter.must[0]);
         }
         
-        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+        const results = await this.qdrant.scroll(this.getCollectionName(), {
             filter,
             limit,
             with_payload: true,
@@ -278,7 +286,7 @@ export class AgentBrain {
             filter.must.push({ key: 'agentType', match: { value: this.agentType } } as typeof filter.must[0]);
         }
 
-        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+        const results = await this.qdrant.scroll(this.getCollectionName(), {
             filter,
             limit: 1000,
             with_payload: true,
@@ -310,7 +318,7 @@ export class AgentBrain {
         await this.ensureCollection();
         const now = new Date().toISOString();
 
-        await this.qdrant.setPayload(MEMORIES_COLLECTION, memoryId, {
+        await this.qdrant.setPayload(this.getCollectionName(), memoryId, {
             visibility,
             publishedBy: this.agentId,
             publishedAt: now,
@@ -325,7 +333,7 @@ export class AgentBrain {
         await this.ensureCollection();
         const now = new Date().toISOString();
 
-        await this.qdrant.setPayload(MEMORIES_COLLECTION, memoryId, {
+        await this.qdrant.setPayload(this.getCollectionName(), memoryId, {
             visibility: 'private',
             publishedBy: undefined,
             publishedAt: undefined,
@@ -357,7 +365,7 @@ export class AgentBrain {
             ],
         };
 
-        const results = await this.qdrant.search(MEMORIES_COLLECTION, queryEmbedding, limit * 3, {
+        const results = await this.qdrant.search(this.getCollectionName(), queryEmbedding, limit * 3, {
             filter,
             scoreThreshold: minScore,
         });
@@ -404,7 +412,7 @@ export class AgentBrain {
             ],
         };
 
-        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+        const results = await this.qdrant.scroll(this.getCollectionName(), {
             filter,
             limit,
             with_payload: true,
@@ -435,14 +443,14 @@ export class AgentBrain {
      */
     async boost(memoryId: string): Promise<void> {
         await this.ensureCollection();
-        const point = await this.qdrant.getPoint(MEMORIES_COLLECTION, memoryId);
+        const point = await this.qdrant.getPoint(this.getCollectionName(), memoryId);
         if (!point) throw new Error('Memory not found');
 
         const boostCount = Number(point.payload?.boostCount || 0) + 1;
         const downvoteCount = Number(point.payload?.downvoteCount || 0);
         const qualityScore = this.calculateQualityScore(boostCount, downvoteCount);
 
-        await this.qdrant.setPayload(MEMORIES_COLLECTION, memoryId, {
+        await this.qdrant.setPayload(this.getCollectionName(), memoryId, {
             boostCount,
             qualityScore,
             updatedAt: new Date().toISOString(),
@@ -454,14 +462,14 @@ export class AgentBrain {
      */
     async downvote(memoryId: string): Promise<void> {
         await this.ensureCollection();
-        const point = await this.qdrant.getPoint(MEMORIES_COLLECTION, memoryId);
+        const point = await this.qdrant.getPoint(this.getCollectionName(), memoryId);
         if (!point) throw new Error('Memory not found');
 
         const boostCount = Number(point.payload?.boostCount || 0);
         const downvoteCount = Number(point.payload?.downvoteCount || 0) + 1;
         const qualityScore = this.calculateQualityScore(boostCount, downvoteCount);
 
-        await this.qdrant.setPayload(MEMORIES_COLLECTION, memoryId, {
+        await this.qdrant.setPayload(this.getCollectionName(), memoryId, {
             downvoteCount,
             qualityScore,
             updatedAt: new Date().toISOString(),
@@ -479,7 +487,7 @@ export class AgentBrain {
         status: string;
     }> {
         await this.ensureCollection();
-        const point = await this.qdrant.getPoint(MEMORIES_COLLECTION, memoryId);
+        const point = await this.qdrant.getPoint(this.getCollectionName(), memoryId);
         if (!point) throw new Error('Memory not found');
 
         return {
@@ -556,7 +564,7 @@ export class AgentBrain {
             });
         }
 
-        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+        const results = await this.qdrant.scroll(this.getCollectionName(), {
             filter,
             limit: 1000,
             with_payload: true,
@@ -596,7 +604,7 @@ export class AgentBrain {
                 });
 
                 if (!dryRun) {
-                    await this.qdrant.setPayload(MEMORIES_COLLECTION, String(r.id), {
+                    await this.qdrant.setPayload(this.getCollectionName(), String(r.id), {
                         status: 'archived',
                         updatedAt: new Date().toISOString(),
                     });
@@ -620,7 +628,7 @@ export class AgentBrain {
             ],
         };
 
-        const results = await this.qdrant.scroll(MEMORIES_COLLECTION, {
+        const results = await this.qdrant.scroll(this.getCollectionName(), {
             filter,
             limit: 1000,
             with_payload: true,
@@ -639,7 +647,7 @@ export class AgentBrain {
         }
 
         if (toPurge.length > 0) {
-            await this.qdrant.deletePoints(MEMORIES_COLLECTION, toPurge);
+            await this.qdrant.deletePoints(this.getCollectionName(), toPurge);
         }
 
         return toPurge.length;
