@@ -13,6 +13,10 @@ type AgentRole = "supervisor" | "worker" | "reviewer" | "e2e_agent" | "pr_agent"
 interface Config {
   apiUrl?: string;
   apiKey?: string;
+  sessionToken?: string;
+  sessionExpiresAt?: string;
+  sessionAgent?: string;
+  sessionRole?: string;
   workerId?: string;
   workerName?: string;
   role?: AgentRole;
@@ -38,6 +42,9 @@ interface Config {
   nocodbApiToken?: string;
   nocodbBaseUrl?: string;
   nocodbWorkspaceId?: string;
+  skuterzoneUsername?: string;
+  skuterzonePassword?: string;
+  skuterzoneBaseUrl?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -77,7 +84,7 @@ export function getConfig(): Config {
   }
 }
 
-function saveConfig(config: Config): void {
+export function saveConfig(config: Config): void {
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
@@ -174,6 +181,45 @@ export function setGotessConfig(token: string, bookId: string): void {
   saveConfig(config);
 }
 
+export function setSessionConfig(session: {
+  token: string;
+  expiresAt: string;
+  agent: string;
+  role: string;
+}): void {
+  const config = getConfig();
+  config.sessionToken = session.token;
+  config.sessionExpiresAt = session.expiresAt;
+  config.sessionAgent = session.agent;
+  config.sessionRole = session.role;
+  saveConfig(config);
+}
+
+export function clearSessionConfig(): void {
+  const config = getConfig();
+  delete config.sessionToken;
+  delete config.sessionExpiresAt;
+  delete config.sessionAgent;
+  delete config.sessionRole;
+  saveConfig(config);
+}
+
+export function getSessionConfig(): {
+  token?: string;
+  expiresAt?: string;
+  agent?: string;
+  role?: string;
+} | null {
+  const config = getConfig();
+  if (!config.sessionToken) return null;
+  return {
+    token: config.sessionToken,
+    expiresAt: config.sessionExpiresAt,
+    agent: config.sessionAgent,
+    role: config.sessionRole,
+  };
+}
+
 export const configCommand = new Command("config")
   .description("Manage CLI configuration");
 
@@ -215,6 +261,10 @@ configCommand
       "nocodb-api-token": "nocodbApiToken",
       "nocodb-base-url": "nocodbBaseUrl",
       "nocodb-workspace-id": "nocodbWorkspaceId",
+      // Skuterzone
+      "skuterzone-username": "skuterzoneUsername",
+      "skuterzone-password": "skuterzonePassword",
+      "skuterzone-base-url": "skuterzoneBaseUrl",
     };
 
     const configKey = keyMappings[key];
@@ -230,6 +280,7 @@ configCommand
       console.log("  Gotess:   gotess-token, gotess-book-id");
       console.log("  Gemini:   gemini-api-key");
       console.log("  NocoDB:   nocodb-api-token, nocodb-base-url, nocodb-workspace-id");
+      console.log("  Skuterzone: skuterzone-username, skuterzone-password, skuterzone-base-url");
       console.log("  Brain:    agent-type");
       console.error("\n💡 For configuration help: husky explain config");
       process.exit(1);
@@ -263,7 +314,7 @@ configCommand
     saveConfig(config);
 
     // Mask sensitive values in output
-    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token", "gemini-api-key", "nocodb-api-token"];
+    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token", "gemini-api-key", "nocodb-api-token", "skuterzone-username", "skuterzone-password"];
     const displayValue = sensitiveKeys.includes(key) ? "***" : value;
     console.log(`✓ Set ${key} = ${displayValue}`);
   });

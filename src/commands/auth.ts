@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getConfig } from "./config.js";
+import { getConfig, setSessionConfig, clearSessionConfig, getSessionConfig } from "./config.js";
 import { 
   getPermissions, 
   clearPermissionsCache, 
@@ -7,6 +7,13 @@ import {
   hasPermission,
   canAccessKnowledgeBase 
 } from "../lib/permissions-cache.js";
+
+interface SessionResponse {
+  token: string;
+  expiresAt: string;
+  role: string;
+  agent: string;
+}
 
 const API_KEY_ROLES = [
   "admin", "supervisor", "worker", "reviewer", "support",
@@ -325,6 +332,200 @@ authCommand
         console.log(`❌ Access denied to KB: ${kb}`);
         process.exit(1);
       }
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+      process.exit(1);
+    }
+  });
+
+authCommand
+  .command("login")
+  .description("Create a session token for this agent")
+  .requiredOption("--agent <name>", "Agent name (must be registered in Firestore)")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    try {
+      const config = getConfig();
+      if (!config.apiUrl || !config.apiKey) {
+        console.error("API not configured. Run: husky config set api-url <url> && husky config set api-key <key>");
+        process.exit(1);
+      }
+
+      const url = new URL("/api/auth/session", config.apiUrl);
+      const res = await fetch(url.toString(), {
+        method: "POST",
+        headers: {
+          "x-api-key": config.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ agent: options.agent }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: res.statusText }));
+        if (res.status === 404) {
+          console.error(`Agent '${options.agent}' not found. Register the agent first.`);
+        } else {
+          console.error(`Login failed: ${error.message || error.error || `HTTP ${res.status}`}`);
+        }
+        process.exit(1);
+      }
+
+      const session: SessionResponse = await res.json();
+      setSessionConfig(session);
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          success: true,
+          agent: session.agent,
+          role: session.role,
+          expiresAt: session.expiresAt,
+        }, null, 2));
+        return;
+      }
+
+      const expiresAt = new Date(session.expiresAt);
+      console.log("\n✅ Session created");
+      console.log("─".repeat(40));
+      console.log(`Agent:    ${session.agent}`);
+      console.log(`Role:     ${session.role}`);
+      console.log(`Expires:  ${expiresAt.toLocaleString()}`);
+      console.log("");
+      console.log("All API calls will now use this session token.");
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+      process.exit(1);
+    }
+  });
+
+authCommand
+  .command("logout")
+  .description("Clear the current session token")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    const session = getSessionConfig();
+    
+    if (!session) {
+      if (options.json) {
+        console.log(JSON.stringify({ success: false, message: "No active session" }));
+      } else {
+        console.log("No active session to clear.");
+      }
+      return;
+    }
+
+    clearSessionConfig();
+
+    if (options.json) {
+      console.log(JSON.stringify({ success: true, agent: session.agent }));
+      return;
+    }
+
+    console.log(`✅ Session cleared for agent '${session.agent}'`);
+  });
+
+authCommand
+  .command("session")
+  .description("Show current session status")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    const session = getSessionConfig();
+
+    if (!session || !session.token) {
+      if (options.json) {
+        console.log(JSON.stringify({ active: false }));
+      } else {
+        console.log("No active session. Run: husky auth login --agent <name>");
+      }
+      return;
+    }
+
+    const expiresAt = session.expiresAt ? new Date(session.expiresAt) : null;
+    const now = new Date();
+    const isExpired = expiresAt ? expiresAt < now : true;
+    const expiresInMs = expiresAt ? expiresAt.getTime() - now.getTime() : 0;
+    const expiresInMinutes = Math.max(0, Math.floor(expiresInMs / 60000));
+
+    if (options.json) {
+      console.log(JSON.stringify({
+        active: !isExpired,
+        agent: session.agent,
+        role: session.role,
+        expiresAt: session.expiresAt,
+        expired: isExpired,
+        expiresInMinutes,
+      }, null, 2));
+      return;
+    }
+
+    console.log("\n🔐 Session Status");
+    console.log("─".repeat(40));
+    console.log(`Agent:    ${session.agent || "(unknown)"}`);
+    console.log(`Role:     ${session.role || "(unknown)"}`);
+    
+    if (isExpired) {
+      console.log(`Status:   🔴 EXPIRED`);
+      console.log(`Expired:  ${expiresAt?.toLocaleString() || "(unknown)"}`);
+      console.log("");
+      console.log("Run: husky auth refresh --agent <name>");
+    } else {
+      console.log(`Status:   🟢 ACTIVE`);
+      console.log(`Expires:  ${expiresAt?.toLocaleString()} (${expiresInMinutes} minutes)`);
+    }
+  });
+
+authCommand
+  .command("refresh")
+  .description("Refresh the session token")
+  .option("--agent <name>", "Agent name (uses current session agent if not specified)")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    try {
+      const config = getConfig();
+      if (!config.apiUrl || !config.apiKey) {
+        console.error("API not configured. Run: husky config set api-url <url> && husky config set api-key <key>");
+        process.exit(1);
+      }
+
+      const currentSession = getSessionConfig();
+      const agentName = options.agent || currentSession?.agent;
+
+      if (!agentName) {
+        console.error("No agent specified and no active session. Use: husky auth refresh --agent <name>");
+        process.exit(1);
+      }
+
+      const url = new URL("/api/auth/session", config.apiUrl);
+      const res = await fetch(url.toString(), {
+        method: "POST",
+        headers: {
+          "x-api-key": config.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ agent: agentName }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: res.statusText }));
+        console.error(`Refresh failed: ${error.message || error.error || `HTTP ${res.status}`}`);
+        process.exit(1);
+      }
+
+      const session: SessionResponse = await res.json();
+      setSessionConfig(session);
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          success: true,
+          agent: session.agent,
+          role: session.role,
+          expiresAt: session.expiresAt,
+        }, null, 2));
+        return;
+      }
+
+      const expiresAt = new Date(session.expiresAt);
+      console.log(`✅ Session refreshed for '${session.agent}' (expires: ${expiresAt.toLocaleString()})`);
     } catch (error) {
       console.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
       process.exit(1);

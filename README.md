@@ -143,6 +143,76 @@ husky e2e list --task <id>               # List artifacts
 husky e2e clean --older-than 7           # Clean old artifacts
 ```
 
+### PR Management (PR Agent)
+
+```bash
+husky pr list                          # List open PRs
+husky pr get <pr-number>               # Get PR details
+husky pr review <pr-number>            # Start review
+husky pr approve <pr-number>           # Approve PR
+husky pr request-changes <pr-number> --comment "..."
+husky pr merge <pr-number>             # Merge PR
+husky pr close <pr-number>             # Close PR
+```
+
+### Infrastructure (DevOps)
+
+```bash
+husky infra status                     # Overall infra status
+husky infra vms                        # List all VMs
+husky infra services                   # Cloud Run services
+husky infra logs <service>             # Service logs
+husky infra metrics                    # Resource metrics
+```
+
+### YouTube Summarization
+
+```bash
+husky youtube <url>                    # Summarize video with Gemini AI
+husky youtube <url> --remember         # Also store in Second Brain
+husky youtube <url> --json             # JSON output
+```
+
+### Image Generation
+
+```bash
+husky image "a futuristic city"        # Generate image with Imagen 3
+husky image "..." --output ./image.png # Save to file
+husky image "..." --aspect 16:9        # Aspect ratio
+```
+
+### Mermaid Diagrams
+
+```bash
+husky mermaid validate <file>          # Validate Mermaid syntax
+husky mermaid validate --stdin         # Validate from stdin
+```
+
+### Service Accounts
+
+```bash
+husky sa list                          # List service accounts
+husky sa create <name> --role worker   # Create service account
+husky sa get <id>                      # Get details
+husky sa delete <id>                   # Delete service account
+```
+
+### Agent Messaging
+
+```bash
+husky agent-msg send <to> "message"    # Send to another agent
+husky agent-msg inbox                  # Check inbox
+husky agent-msg read <id>              # Read message
+```
+
+### Preview Deployments
+
+```bash
+husky preview list                     # List PR previews
+husky preview get <pr-number>          # Get preview URL
+husky preview logs <pr-number>         # Preview logs
+```
+
 ### Business Strategy
 
 ```bash
@@ -249,6 +319,41 @@ husky config list
 husky config test
 ```
 
+### Authentication (Session Tokens)
+
+Session tokens provide short-lived JWT authentication for agents. They are created using `HUSKY_API_KEY` and auto-refresh when expired.
+
+```bash
+# Login (creates 1-hour session token)
+husky auth login --agent supervisor
+husky auth login --agent husky-worker-1
+
+# Check session status
+husky auth session
+husky auth session --json
+
+# Refresh token manually
+husky auth refresh
+husky auth refresh --agent supervisor
+
+# Logout (clear session)
+husky auth logout
+```
+
+**VM Startup Pattern:**
+```bash
+#!/bin/bash
+VM_NAME=$(hostname)
+husky auth login --agent "$VM_NAME"
+# All subsequent commands use Bearer token
+```
+
+**How it works:**
+1. `HUSKY_API_KEY` is used once to create a session token
+2. All subsequent API calls use `Authorization: Bearer <token>`
+3. Token auto-refreshes when expired or within 5 minutes of expiry
+4. Falls back to `x-api-key` if refresh fails
+
 ### Help & Documentation
 
 ```bash
@@ -327,6 +432,27 @@ husky --version
 ```
 
 ## Changelog
+
+### v1.12.0 (2026-01-12) - Session Token Authentication
+
+**New Features:**
+- `husky auth login --agent <name>` - Create session token from HUSKY_API_KEY
+- `husky auth logout` - Clear session token
+- `husky auth session` - Show session status (agent, role, expiry)
+- `husky auth refresh` - Manually refresh token
+
+**Improvements:**
+- All API calls now use Bearer token authentication (auto-refresh)
+- Token auto-refreshes when expired or within 5 minutes of expiry
+- Falls back to x-api-key for backwards compatibility
+- JWT_SECRET now required in production (fail-fast)
+
+**Documentation:**
+- Added missing command sections: pr, infra, youtube, image, mermaid, sa, agent-msg, preview
+- Updated architecture docs with session token flow
+
+**Code Quality:**
+- Removed `as any` type suppression in sop.ts
 
 ### v1.7.0 (2026-01-11) - E2E Agent Production Ready
 

@@ -938,11 +938,12 @@ taskCommand
 
         const data = await res.json();
 
-        if (data.status === "approved") {
+        if (data.approved === true && data.pending === false) {
           console.log("✓ Plan approved!");
           process.exit(0);
-        } else if (data.status === "rejected") {
+        } else if (data.approved === false && data.rejected === true) {
           console.log("✗ Plan rejected");
+          if (data.reason) console.log(`Reason: ${data.reason}`);
           process.exit(1);
         }
 

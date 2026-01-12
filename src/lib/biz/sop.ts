@@ -416,27 +416,8 @@ export class SOPService {
             with_payload?: boolean;
         }
     ): Promise<Array<{ id: string | number; payload: Record<string, unknown> }>> {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const qdrantAny = this.qdrant as any;
-
         try {
-            const response = await qdrantAny.request(`/collections/${collection}/points/scroll`, {
-                method: 'POST',
-                body: JSON.stringify({
-                    filter: options.filter,
-                    limit: options.limit || 50,
-                    with_payload: options.with_payload ?? true,
-                }),
-            }) as {
-                result: {
-                    points: Array<{ id: string | number; payload?: Record<string, unknown> }>;
-                };
-            };
-
-            return response.result.points.map((p: { id: string | number; payload?: Record<string, unknown> }) => ({
-                id: p.id,
-                payload: p.payload || {},
-            }));
+            return await this.qdrant.scroll(collection, options);
         } catch (error) {
             console.error('Scroll failed:', error);
             return [];
