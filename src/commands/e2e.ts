@@ -877,3 +877,123 @@ e2eCommand
       }
     }
   });
+
+// husky e2e done <inboxId> - Complete an E2E test request
+e2eCommand
+  .command("done <inboxId>")
+  .description("Complete an E2E test request from inbox")
+  .option("--passed", "Mark test as passed")
+  .option("--failed", "Mark test as failed")
+  .option("--notes <notes>", "Add notes about the test result")
+  .option("--screenshots <urls...>", "Screenshot URLs to attach")
+  .option("--video <url>", "Video URL to attach")
+  .option("--json", "Output as JSON")
+  .action(async (inboxId, options) => {
+    requireAnyPermission(["task:e2e_pass", "deploy:sandbox", "deploy:*"]);
+
+    const config = ensureConfig();
+
+    // Determine status
+    let passed: boolean | undefined;
+    if (options.passed) {
+      passed = true;
+    } else if (options.failed) {
+      passed = false;
+    }
+
+    if (passed === undefined) {
+      console.error("Error: Must specify --passed or --failed");
+      process.exit(1);
+    }
+
+    const status = passed ? "completed" : "failed";
+
+    console.log(`\n  Completing E2E Test Request\n`);
+    console.log(`  Inbox ID: ${inboxId}`);
+    console.log(`  Result: ${passed ? "PASSED" : "FAILED"}`);
+    if (options.notes) {
+      console.log(`  Notes: ${options.notes}`);
+    }
+    console.log("");
+
+    try {
+      // First, get the inbox item to find the taskId
+      const getRes = await fetch(`${config.apiUrl}/api/e2e/inbox/${inboxId}`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!getRes.ok) {
+        console.error(`Error: Inbox item not found (${getRes.status})`);
+        process.exit(1);
+      }
+
+      const inboxItem = await getRes.json();
+      const taskId = inboxItem.taskId;
+
+      // Build result object
+      const result = {
+        passed,
+        notes: options.notes,
+        screenshots: options.screenshots || [],
+        video: options.video,
+        completedAt: new Date().toISOString(),
+      };
+
+      // Update inbox status
+      const updateRes = await fetch(`${config.apiUrl}/api/e2e/inbox/${inboxId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          status,
+          result,
+        }),
+      });
+
+      if (!updateRes.ok) {
+        console.error(`Error updating inbox: ${updateRes.status}`);
+        process.exit(1);
+      }
+
+      // Update task status
+      const taskEndpoint = passed
+        ? `${config.apiUrl}/api/tasks/${taskId}/e2e/pass`
+        : `${config.apiUrl}/api/tasks/${taskId}/e2e/fail`;
+
+      const taskRes = await fetch(taskEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          notes: options.notes || (passed ? "E2E tests passed" : "E2E tests failed"),
+          screenshots: options.screenshots || [],
+          video: options.video,
+        }),
+      });
+
+      if (!taskRes.ok) {
+        console.warn(`Warning: Could not update task status: ${taskRes.status}`);
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify({
+          success: true,
+          inboxId,
+          taskId,
+          status,
+          result,
+        }, null, 2));
+      } else {
+        console.log(`  ${passed ? "✓" : "✗"} E2E test request completed`);
+        console.log(`  Task ${taskId} status updated to: ${passed ? "pr_ready" : "e2e_testing"}`);
+        console.log("");
+      }
+    } catch (error) {
+      console.error("Error completing E2E request:", (error as Error).message);
+      process.exit(1);
+    }
+  });

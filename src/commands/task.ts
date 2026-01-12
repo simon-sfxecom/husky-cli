@@ -315,6 +315,8 @@ taskCommand
   .description("Mark task as done")
   .option("--pr <url>", "Link to PR")
   .option("--skip-qa", "Skip QA review and mark as done directly")
+  .option("--learnings <text>", "Explicit learnings to capture")
+  .option("--no-learnings", "Skip automatic learning capture")
   .action(async (id, options) => {
     // RBAC: Only supervisor and pr_agent can set tasks to done
     requirePermission("task:done");
@@ -332,7 +334,7 @@ taskCommand
           "Content-Type": "application/json",
           ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           prUrl: options.pr,
           skipQA: options.skipQa === true,
         }),
@@ -343,19 +345,105 @@ taskCommand
       }
 
       const task = await res.json();
-      
+
       if (task.qaTriggered) {
         console.log(`✓ Task moved to review: ${task.title}`);
         console.log(`  QA pipeline triggered - awaiting verification`);
       } else {
         console.log(`✓ Completed: ${task.title}`);
       }
-      
+
       if (task.message) {
         console.log(`  ${task.message}`);
       }
+
+      // Capture learnings (unless --no-learnings flag is set)
+      if (options.learnings !== false) {
+        try {
+          const { resolveAgentIdentity } = await import("../lib/agent-identity.js");
+          const { captureLearnings, fetchTask } = await import("../lib/biz/learning-capture.js");
+
+          const identity = resolveAgentIdentity();
+          const taskDetails = await fetchTask(id, config.apiUrl, config.apiKey);
+
+          if (taskDetails) {
+            const learningResults = await captureLearnings({
+              taskId: id,
+              task: taskDetails,
+              prUrl: options.pr,
+              explicitLearnings: options.learnings,
+              agentId: identity.agentId,
+              agentType: identity.agentType,
+            });
+
+            if (learningResults.length > 0) {
+              console.log(`  🧠 Captured ${learningResults.length} learning(s)`);
+            }
+          }
+        } catch (error) {
+          console.warn(`  ⚠️  Failed to capture learnings: ${error instanceof Error ? error.message : error}`);
+          // Don't fail task completion if learning capture fails
+        }
+      }
     } catch (error) {
       console.error("Error completing task:", error);
+      process.exit(1);
+    }
+  });
+
+// husky task assign <id> --worker <hostname> [--priority <level>] [--instructions <text>]
+taskCommand
+  .command("assign <id>")
+  .description("Assign a task to a specific worker (creates entry in worker inbox)")
+  .requiredOption("--worker <hostname>", "Target worker hostname (e.g., worker-1)")
+  .option("--priority <level>", "Priority: low, normal, high, urgent", "normal")
+  .option("--instructions <text>", "Additional instructions for the worker")
+  .option("--json", "Output as JSON")
+  .action(async (id, options) => {
+    const config = ensureConfig();
+
+    // Validate priority
+    const validPriorities = ["low", "normal", "high", "urgent"];
+    if (!validPriorities.includes(options.priority)) {
+      console.error(`Error: Invalid priority "${options.priority}". Use: ${validPriorities.join(", ")}`);
+      process.exit(1);
+    }
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/tasks/${id}/assign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          targetHostname: options.worker,
+          priority: options.priority,
+          instructions: options.instructions,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${res.status}`);
+      }
+
+      const result = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`✓ Task assigned to worker inbox`);
+        console.log(`  Task ID:    ${id}`);
+        console.log(`  Worker:     ${options.worker}`);
+        console.log(`  Priority:   ${options.priority}`);
+        if (options.instructions) {
+          console.log(`  Instructions: ${options.instructions.slice(0, 50)}...`);
+        }
+        console.log(`\n  The worker-bridge on ${options.worker} will inject this task into OpenCode.`);
+      }
+    } catch (error) {
+      console.error("Error assigning task:", error);
       process.exit(1);
     }
   });

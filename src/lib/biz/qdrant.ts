@@ -54,24 +54,26 @@ export class QdrantClient {
 
     /**
      * Create client from Husky config
-     * Priority: PROD_* env vars > env vars > local config
+     * Priority: HUSKY_QDRANT_URL (VM standard) > PROD_* env vars > config > localhost
      */
     static fromConfig(): QdrantClient {
         const config = getConfig();
         const env = process.env.HUSKY_ENV || 'PROD';
 
         const qdrantConfig: QdrantConfig = {
-            url: process.env[`${env}_QDRANT_URL`] || process.env.QDRANT_URL || config.qdrantUrl || 'http://localhost:6333',
+            // Priority: HUSKY_QDRANT_URL (VM standard) > PROD_QDRANT_URL > config > localhost
+            url: process.env.HUSKY_QDRANT_URL || process.env[`${env}_QDRANT_URL`] || process.env.QDRANT_URL || config.qdrantUrl || 'http://localhost:6333',
+            // API key optional - internal Qdrant VM is VPC secured
             apiKey: process.env[`${env}_QDRANT_API_KEY`] || process.env.QDRANT_API_KEY || config.qdrantApiKey,
         };
 
         if (!qdrantConfig.url || qdrantConfig.url === 'http://localhost:6333') {
-            if (!process.env.QDRANT_URL && !process.env[`${env}_QDRANT_URL`]) {
+            if (!process.env.QDRANT_URL && !process.env[`${env}_QDRANT_URL`] && !process.env.HUSKY_QDRANT_URL) {
                 throw new Error(
                     'Missing Qdrant URL. Configure with:\n' +
-                    '  husky config set qdrant-url <url>\n' +
-                    '  husky config set qdrant-api-key <key>\n' +
-                    'Or set env vars: PROD_QDRANT_URL, PROD_QDRANT_API_KEY'
+                    '  husky config set qdrant-url http://10.132.0.46:6333\n' +
+                    'Or set env var: HUSKY_QDRANT_URL\n\n' +
+                    'Note: Internal Qdrant VM - no API key needed (VPC secured)'
                 );
             }
         }
@@ -262,6 +264,23 @@ export class QdrantClient {
             id: p.id,
             payload: p.payload || {},
         }));
+    }
+
+    /**
+     * Update payload for a specific point (for quality/visibility updates)
+     */
+    async setPayload(
+        collectionName: string,
+        id: string | number,
+        payload: Record<string, unknown>
+    ): Promise<void> {
+        await this.request(`/collections/${collectionName}/points/payload?wait=true`, {
+            method: 'POST',
+            body: JSON.stringify({
+                points: [id],
+                payload,
+            }),
+        });
     }
 }
 

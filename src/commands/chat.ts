@@ -444,6 +444,128 @@ chatCommand
   });
 
 chatCommand
+  .command("send-file <filePath>")
+  .description("Send a file attachment to Google Chat (images auto-compressed)")
+  .option("--space <name>", "Target space (e.g., spaces/ABC123)")
+  .option("--thread <name>", "Reply in thread")
+  .option("--text <message>", "Optional message text to accompany the file")
+  .option("--no-compress", "Skip image compression")
+  .action(async (filePath: string, options) => {
+    const config = getConfig();
+    const huskyApiUrl = getHuskyApiUrl();
+    if (!huskyApiUrl) {
+      console.error("Error: API URL not configured. Set husky-api-url or api-url.");
+      process.exit(1);
+    }
+
+    const fs = await import("fs");
+    const path = await import("path");
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      console.error(`Error: File not found: ${filePath}`);
+      process.exit(1);
+    }
+
+    const fileName = path.basename(filePath);
+
+    // Determine MIME type from extension
+    const ext = path.extname(filePath).toLowerCase().slice(1);
+    const mimeTypes: Record<string, string> = {
+      // Images
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      svg: "image/svg+xml",
+      // Documents
+      pdf: "application/pdf",
+      txt: "text/plain",
+      md: "text/markdown",
+      // Data
+      json: "application/json",
+      xml: "application/xml",
+      csv: "text/csv",
+      yaml: "application/x-yaml",
+      yml: "application/x-yaml",
+      // Code
+      js: "text/javascript",
+      ts: "text/typescript",
+      py: "text/x-python",
+      html: "text/html",
+      css: "text/css",
+      sh: "text/x-sh",
+      sql: "text/x-sql",
+    };
+    const mimeType = mimeTypes[ext] || "application/octet-stream";
+
+    // Read file
+    let fileBuffer = fs.readFileSync(filePath);
+    const originalSize = fileBuffer.length;
+
+    console.log(`📤 Preparing ${fileName} (${(originalSize / 1024).toFixed(1)} KB, ${mimeType})...`);
+
+    // Compress images automatically (unless --no-compress flag is set)
+    const isImage = mimeType.startsWith("image/") && !mimeType.includes("svg");
+    if (isImage && options.compress !== false) {
+      try {
+        const sharp = await import("sharp");
+        console.log(`🔄 Compressing image...`);
+
+        const compressed = await sharp.default(fileBuffer)
+          .resize(1920, 1920, {
+            fit: "inside",
+            withoutEnlargement: true
+          })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+
+        fileBuffer = Buffer.from(compressed);
+
+        const compressedSize = fileBuffer.length;
+        const savedPercent = ((1 - compressedSize / originalSize) * 100).toFixed(0);
+
+        console.log(`✓ Compressed: ${(originalSize / 1024).toFixed(1)} KB → ${(compressedSize / 1024).toFixed(1)} KB (saved ${savedPercent}%)`);
+      } catch (error) {
+        console.warn(`⚠️  Compression failed, uploading original: ${(error as Error).message}`);
+      }
+    }
+
+    const fileBase64 = fileBuffer.toString("base64");
+    console.log(`📤 Uploading ${fileName} (${(fileBuffer.length / 1024).toFixed(1)} KB)...`);
+
+    try {
+      const res = await fetch(`${huskyApiUrl}/api/google-chat/send-file`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          fileBase64,
+          fileName,
+          mimeType,
+          text: options.text,
+          spaceName: options.space,
+          threadName: options.thread,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`API error: ${res.status} - ${error}`);
+      }
+
+      const data = await res.json() as { success: boolean; messageName?: string; fileName?: string };
+      console.log(`✅ File sent to Google Chat: ${data.fileName}`);
+    } catch (error) {
+      console.error("Error sending file:", error);
+      process.exit(1);
+    }
+  });
+
+chatCommand
   .command("reply-to <messageId> <response>")
   .description("Reply to a specific inbox message in its thread (supports both GitHub and Google Chat)")
   .action(async (messageId: string, response: string) => {

@@ -1,6 +1,6 @@
 {
   "name": "@simonfestl/husky-cli",
-  "version": "1.7.0",
+  "version": "1.8.2",
   "description": "CLI for Huskyv0 Task Orchestration with Claude Agent SDK",
   "type": "module",
   "bin": {
@@ -20,9 +20,14 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.0",
+    "@google-cloud/vertexai": "^1.10.0",
+    "@google/generative-ai": "^0.24.1",
     "@inquirer/prompts": "^8.1.0",
     "commander": "^12.1.0",
-    "firebase-admin": "^13.6.0"
+    "firebase-admin": "^13.6.0",
+    "sharp": "^0.34.5",
+    "youtube-transcript": "^1.2.1",
+    "zod": "^4.3.5"
   },
   "devDependencies": {
     "@types/node": "^22",

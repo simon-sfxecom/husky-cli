@@ -35,6 +35,8 @@ import { mermaidCommand } from "./commands/mermaid.js";
 import { infraCommand } from "./commands/infra.js";
 import { e2eCommand } from "./commands/e2e.js";
 import { prCommand } from "./commands/pr.js";
+import { youtubeCommand } from "./commands/youtube.js";
+import { imageCommand } from "./commands/image.js";
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -78,6 +80,8 @@ program.addCommand(mermaidCommand);
 program.addCommand(infraCommand);
 program.addCommand(e2eCommand);
 program.addCommand(prCommand);
+program.addCommand(youtubeCommand);
+program.addCommand(imageCommand);
 
 // Handle --llm flag specially
 if (process.argv.includes("--llm")) {

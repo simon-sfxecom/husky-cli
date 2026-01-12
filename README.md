@@ -128,6 +128,10 @@ husky e2e inbox --task <task-id>         # Filter by task
 husky e2e watch --interval 30
 husky e2e watch --once                   # Process once and exit
 
+# Complete E2E test request (used by e2e-bridge)
+husky e2e done <inbox-id> --passed       # Mark as passed
+husky e2e done <inbox-id> --failed --notes "reason"
+
 # Browser automation utilities
 husky e2e screenshot <url>               # Take screenshot
 husky e2e screenshot <url> --upload      # Upload to GCS

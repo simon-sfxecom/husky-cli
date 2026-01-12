@@ -33,6 +33,10 @@ interface Config {
   gotessToken?: string;
   gotessBookId?: string;
   agentType?: string;
+  geminiApiKey?: string;
+  nocodbApiToken?: string;
+  nocodbBaseUrl?: string;
+  nocodbWorkspaceId?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -204,6 +208,12 @@ configCommand
       "gotess-token": "gotessToken",
       "gotess-book-id": "gotessBookId",
       "agent-type": "agentType",
+      // Gemini
+      "gemini-api-key": "geminiApiKey",
+      // NocoDB
+      "nocodb-api-token": "nocodbApiToken",
+      "nocodb-base-url": "nocodbBaseUrl",
+      "nocodb-workspace-id": "nocodbWorkspaceId",
     };
 
     const configKey = keyMappings[key];
@@ -217,6 +227,8 @@ configCommand
       console.log("  Qdrant:   qdrant-url, qdrant-api-key");
       console.log("  GCP:      gcp-project-id, gcp-location");
       console.log("  Gotess:   gotess-token, gotess-book-id");
+      console.log("  Gemini:   gemini-api-key");
+      console.log("  NocoDB:   nocodb-api-token, nocodb-base-url, nocodb-workspace-id");
       console.log("  Brain:    agent-type");
       process.exit(1);
     }
@@ -243,7 +255,7 @@ configCommand
     saveConfig(config);
 
     // Mask sensitive values in output
-    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token"];
+    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token", "gemini-api-key", "nocodb-api-token"];
     const displayValue = sensitiveKeys.includes(key) ? "***" : value;
     console.log(`✓ Set ${key} = ${displayValue}`);
   });

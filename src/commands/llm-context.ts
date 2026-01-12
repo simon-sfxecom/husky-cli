@@ -250,16 +250,83 @@ husky biz qdrant search <coll> "<q>"    # Semantic search
 
 ---
 
+## Agent Brain (Lernender Agent)
+
+> [!IMPORTANT]
+> **MANDATORY WORKFLOW für Daily Ops (Support, Worker, etc.)**
+>
+> 1. **VOR der Arbeit**: \`husky brain recall\` - Prüfe ob ähnliches Problem bereits gelöst wurde
+> 2. **NACH der Arbeit**: \`husky brain remember\` - Speichere neue Erkenntnisse
+
+### Role-Based Access
+
+Jeder Agent-Typ hat sein **eigenes Brain** und kann NUR auf eigene Memories zugreifen:
+
+| Agent Type | Brain Collection | Zugriff |
+|------------|------------------|---------|
+| \`support\` | brain_support | Nur Support-Wissen |
+| \`worker\` | brain_worker | Nur Worker-Wissen |
+| \`supervisor\` | brain_supervisor | Nur Supervisor-Wissen |
+| \`claude\` | brain_claude | Nur Claude-Wissen |
+
+Der Agent-Typ wird automatisch aus \`HUSKY_AGENT_TYPE\` oder Config gelesen.
+
+### Commands
+
+\`\`\`bash
+# ZUERST: Bestehendes Wissen abrufen
+husky brain recall "kunde kann nicht einloggen"    # Semantic Search
+husky brain recall "billing problem" --limit 10    # Mehr Ergebnisse
+
+# DANACH: Neues Wissen speichern
+husky brain remember "Login-Problem bei Safari gelöst durch Cache löschen" --tags "login,safari,cache"
+
+# Weitere Commands
+husky brain list                        # Alle eigenen Memories
+husky brain tags "billing,refund"       # Nach Tags suchen
+husky brain stats                       # Statistiken
+husky brain info                        # Aktuelle Konfiguration
+husky brain forget <id>                 # Memory löschen
+\`\`\`
+
+### Workflow Beispiel: Support Agent
+
+\`\`\`bash
+# 1. Neues Ticket kommt rein: "Kunde kann Rechnung nicht herunterladen"
+husky brain recall "rechnung download problem"
+
+# 2. Brain findet ähnliche gelöste Fälle:
+#    [92.3%] PDF-Download funktioniert nicht bei AdBlocker - Lösung: AdBlocker deaktivieren
+#    [87.1%] Rechnung lädt nicht - Browser-Cache war voll
+
+# 3. Agent nutzt Wissen, löst Ticket
+
+# 4. Nach Lösung: Neues Wissen speichern
+husky brain remember "Rechnungs-Download fehlgeschlagen wegen Corporate Firewall - IT musste *.billbee.io freigeben" --tags "billing,download,firewall,corporate"
+\`\`\`
+
+### Best Practices
+
+- **Tags verwenden**: Immer relevante Tags hinzufügen für bessere Auffindbarkeit
+- **Konkret sein**: "Safari Cache löschen löst Login" statt "Login Problem gelöst"
+- **Kontext speichern**: Ursache UND Lösung dokumentieren
+- **Regelmäßig recall**: Vor JEDER neuen Aufgabe prüfen ob Wissen existiert
+
+---
+
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
 | \`HUSKY_ENV\` | Environment prefix (PROD/SANDBOX) |
+| \`HUSKY_AGENT_TYPE\` | Agent type for brain access (support/worker/supervisor/claude) |
+| \`HUSKY_AGENT_ID\` | Unique agent identifier |
 | \`PROD_BILLBEE_API_KEY\` | Billbee API key |
 | \`PROD_ZENDESK_API_TOKEN\` | Zendesk token |
 | \`PROD_SEATABLE_API_TOKEN\` | SeaTable token |
-| \`PROD_QDRANT_URL\` | Qdrant URL |
-| \`PROD_QDRANT_API_KEY\` | Qdrant API key |
+| \`HUSKY_QDRANT_URL\` | Qdrant URL (internal: http://10.132.0.46:6333) |
+
+> **Note:** Qdrant runs on internal VM (VPC). No API key needed - access is secured by VPC isolation.
 
 ---
 
