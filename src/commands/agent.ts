@@ -448,6 +448,8 @@ const ROLE_EMOJI: Record<AgentRole, string> = {
   worker: "\uD83D\uDD27",     // Wrench emoji for worker
   reviewer: "\uD83D\uDCDD",   // Memo emoji for reviewer
   support: "\uD83C\uDFA7",    // Headphones emoji for support
+  e2e_agent: "\uD83E\uDDEA",  // Test tube emoji for e2e agent
+  pr_agent: "\uD83D\uDE80",   // Rocket emoji for pr agent
 };
 
 // husky agent message
