@@ -28,6 +28,26 @@ export function checkPermission(permission: string): boolean {
 }
 
 /**
+ * Permission-specific hints for workers
+ */
+const workerPermissionHints: Record<string, string[]> = {
+  "task:done": [
+    "",
+    "💡 As a worker, you cannot mark tasks as done directly.",
+    "   Instead, submit your work for review:",
+    "",
+    "   1. Set the task to review status:",
+    "      husky task update <id> --status review",
+    "",
+    "   2. Or notify the supervisor:",
+    "      husky task message <id> -m \"Ready for review. PR: <url>\"",
+    "",
+    "   The supervisor will review your work and either forward it to",
+    "   the review agent or get back to you with feedback.",
+  ],
+};
+
+/**
  * Require a specific permission, exit with error if not granted.
  * Use this at the start of command handlers to enforce RBAC.
  */
@@ -42,7 +62,15 @@ export function requirePermission(permission: string): void {
     } else {
       console.error("Run 'husky config test' to refresh your role and permissions.");
     }
-    console.error(`\n💡 For configuration help: husky explain ${ExplainTopic.CONFIG}`);
+
+    // Show role-specific hints for certain permissions
+    if (role === "worker" && workerPermissionHints[permission]) {
+      for (const line of workerPermissionHints[permission]) {
+        console.error(line);
+      }
+    } else {
+      console.error(`\n💡 For configuration help: husky explain ${ExplainTopic.CONFIG}`);
+    }
     process.exit(1);
   }
 }
