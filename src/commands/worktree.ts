@@ -813,6 +813,16 @@ worktreeCommand
   .option("--json", "Output as JSON")
   .action(async (sessionName, options) => {
     try {
+      // Worker role cannot push - must submit for review
+      const config = getConfig();
+      const role = config.sessionRole || config.role || "";
+      if (role === "worker") {
+        console.error("Error: Workers cannot push directly.");
+        console.error("Submit for review instead: husky task update <id> --status review");
+        console.error("The Reviewer agent will push and create the PR.");
+        process.exit(1);
+      }
+
       const manager = getManager(options);
       const info = manager.getWorktree(sessionName);
 
@@ -849,6 +859,15 @@ worktreeCommand
   .option("--json", "Output as JSON")
   .action(async (sessionName, options) => {
     const config = getConfig();
+
+    // Worker role cannot create PRs - must submit for review
+    const role = config.sessionRole || config.role || "";
+    if (role === "worker") {
+      console.error("Error: Workers cannot create PRs directly.");
+      console.error("Submit for review instead: husky task update <id> --status review");
+      console.error("The Reviewer agent will create the PR after code review.");
+      process.exit(1);
+    }
 
     try {
       const manager = getManager(options);
