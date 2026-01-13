@@ -13,6 +13,7 @@ import {
     WattizOrderDetails,
     WattizProduct,
     WattizLoginResult,
+    WattizLineItem,
 } from './wattiz-types.js';
 
 export class WattizPlaywrightClient {
@@ -142,8 +143,6 @@ export class WattizPlaywrightClient {
                 throw new Error('Could not find password input field');
             }
 
-            console.log(`Using selectors: email="${emailInput}", password="${passwordInput}"`);
-
             // Fill in login form
             await page.fill(emailInput, this.config.username);
             await page.fill(passwordInput, this.config.password);
@@ -175,13 +174,6 @@ export class WattizPlaywrightClient {
 
             // Check if logged in by looking for my-account page or logged-in indicators
             const currentUrl = page.url();
-            console.log('After login, current URL:', currentUrl);
-
-            // Check for error messages first
-            const errorMsg = await page.locator('.alert-danger, .error-message, .ps-alert-error').textContent().catch(() => '');
-            if (errorMsg) {
-                console.log('Error message on page:', errorMsg.trim());
-            }
 
             const isLoggedIn = currentUrl.includes('/my-account') ||
                               currentUrl.includes('/mon-compte') ||
@@ -190,14 +182,7 @@ export class WattizPlaywrightClient {
                               await page.locator('.logout, .sign-out').count() > 0 ||
                               await page.locator('a[href*="logout"]').count() > 0;
 
-            console.log('Is logged in:', isLoggedIn);
-
             if (!isLoggedIn) {
-                // Save debug HTML
-                const debugHtml = await page.content();
-                await fs.promises.writeFile('/tmp/wattiz-after-login.html', debugHtml);
-                console.log('Debug HTML saved to /tmp/wattiz-after-login.html');
-
                 return {
                     success: false,
                     cookies: '',
@@ -247,7 +232,7 @@ export class WattizPlaywrightClient {
         for (let i = 0; i < count; i++) {
             const row = orderRows.nth(i);
 
-            // PrestaShop order structure
+            // PrestaShop order structure - get link for order ID
             const orderLinkEl = row.locator('a[href*="order-detail"]').first();
             const orderLink = await orderLinkEl.getAttribute('href').catch(() => '');
 
@@ -255,10 +240,35 @@ export class WattizPlaywrightClient {
             const orderIdMatch = orderLink?.match(/id_order=(\d+)/);
             const orderId = orderIdMatch ? orderIdMatch[1] : '';
 
-            const orderNumber = await orderLinkEl.textContent().catch(() => '') || orderId;
-            const date = (await row.locator('.order-date, td:nth-child(2)').textContent().catch(() => '')) || '';
-            const status = (await row.locator('.order-status, td:nth-child(4), .label').textContent().catch(() => '')) || '';
-            const total = (await row.locator('.order-total, td:nth-child(3)').textContent().catch(() => '')) || '';
+            // Get all table cells
+            const cells = row.locator('td');
+            const cellCount = await cells.count();
+
+            // Wattiz order-history table structure (customized PrestaShop):
+            // Col 0: Date, Col 1: Total, Col 2: ?, Col 3: ?, Col 4: Status, Col 5: Actions
+            // Order reference is in the link or we use order ID
+            let orderNumber = orderId;
+            let date = '';
+            let total = '';
+            let status = '';
+
+            if (cellCount >= 2) {
+                // First cell contains Date
+                date = (await cells.nth(0).textContent().catch(() => '')) || '';
+                // Second cell contains Total
+                total = (await cells.nth(1).textContent().catch(() => '')) || '';
+            }
+            if (cellCount >= 5) {
+                // Status is in column 5 (index 4)
+                status = (await cells.nth(4).textContent().catch(() => '')) || '';
+            }
+
+            // Try to find actual order reference in row text
+            const rowText = await row.textContent().catch(() => '') || '';
+            const refMatch = rowText.match(/WATTIZ[A-Z0-9]+|[A-Z]{2,}[0-9]{6,}/i);
+            if (refMatch) {
+                orderNumber = refMatch[0];
+            }
 
             if (orderId) {
                 orders.push({
@@ -279,71 +289,229 @@ export class WattizPlaywrightClient {
         const page = await this.ensureBrowser();
 
         // PrestaShop controller-based URL
-        await page.goto(`${this.config.baseUrl}/${this.config.language}/index.php?controller=order-detail&id_order=${orderId}`);
-        await page.waitForLoadState('networkidle');
+        await page.goto(`${this.config.baseUrl}/${this.config.language}/index.php?controller=order-detail&id_order=${orderId}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
+        });
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
 
         // Check if we need to login
-        const needsLogin = await page.url().includes('/login');
+        const needsLogin = page.url().includes('/login');
         if (needsLogin) {
             await this.login();
-            await page.goto(`${this.config.baseUrl}/${this.config.language}/index.php?controller=order-detail&id_order=${orderId}`);
-            await page.waitForLoadState('networkidle');
+            await page.goto(`${this.config.baseUrl}/${this.config.language}/index.php?controller=order-detail&id_order=${orderId}`, {
+                waitUntil: 'domcontentloaded',
+                timeout: 30000
+            });
+            await page.waitForLoadState('domcontentloaded').catch(() => {});
         }
 
-        // Extract order information
-        const orderNumber = (await page.locator('.order-reference, h3').first().textContent().catch(() => orderId)) || orderId;
-        const orderDate = (await page.locator('.order-date, .date').first().textContent().catch(() => '')) || '';
-        const orderStatus = (await page.locator('.order-status, .label').first().textContent().catch(() => '')) || '';
+        // Extract order information from Wattiz order detail page
+        // Use order ID as the order number (Wattiz doesn't display a separate reference)
+        const orderNumber = orderId;
+        let orderDate = '';
+        let orderStatus = '';
 
-        // Extract customer info
+        // Get visible page text for pattern matching
+        const pageText = await page.locator('body').textContent().catch(() => '') || '';
+
+        // Find date - look for format DD/MM/YYYY or YYYY-MM-DD
+        const dateMatches = pageText.match(/\b(\d{2}[\/\-]\d{2}[\/\-]20\d{2}|20\d{2}[\/\-]\d{2}[\/\-]\d{2})\b/g);
+        if (dateMatches && dateMatches.length > 0 && dateMatches[0]) {
+            orderDate = dateMatches[0];
+        }
+
+        // Get status - look for common shipping status text
+        const statusPatterns = ['Shipped', 'Delivered', 'Processing', 'Pending', 'Cancelled', 'En cours', 'Expédié', 'Livré'];
+        for (const pattern of statusPatterns) {
+            if (pageText.includes(pattern)) {
+                orderStatus = pattern;
+                break;
+            }
+        }
+
+        // Also try status elements if no pattern found
+        if (!orderStatus) {
+            const statusSelectors = ['.label.bright', '.badge', '.order-status'];
+            for (const selector of statusSelectors) {
+                const statusText = await page.locator(selector).first().textContent().catch(() => '');
+                if (statusText && statusText.length > 2 && statusText.length < 25 && !statusText.includes('€')) {
+                    orderStatus = statusText.trim();
+                    break;
+                }
+            }
+        }
+
+        // Extract customer info from address blocks
         let customerName = '';
         let customerAddress = '';
         let customerEmail = '';
         let customerPhone = '';
 
         try {
-            const addressBlock = page.locator('.address, .delivery-address').first();
-            const addressText = await addressBlock.textContent() || '';
-            const lines = addressText.split('\n').map(l => l.trim()).filter(l => l);
+            // PrestaShop uses .address class for address blocks
+            const addressBlocks = page.locator('.address, article.address');
+            const blockCount = await addressBlocks.count();
 
-            if (lines.length > 0) customerName = lines[0];
-            if (lines.length > 1) customerAddress = lines.slice(1).filter(l => !l.includes('@') && !l.startsWith('+')).join(', ');
+            for (let i = 0; i < blockCount; i++) {
+                const block = addressBlocks.nth(i);
+                const addressText = await block.textContent() || '';
+                const lines = addressText.split('\n').map(l => l.trim()).filter(l => l && l.length > 1);
 
-            // Try to find email and phone
-            customerEmail = await page.locator('[href^="mailto:"]').first().textContent().catch(() => '') || '';
+                // First line is usually the name
+                if (lines.length > 0 && !customerName) {
+                    customerName = lines[0];
+                }
+                // Combine address lines (skip name, email, phone)
+                if (lines.length > 1 && !customerAddress) {
+                    customerAddress = lines.slice(1)
+                        .filter(l => !l.includes('@') && !l.match(/^\+?\d[\d\s\-]+$/))
+                        .join(', ');
+                }
+            }
+
+            // Try to find customer email (exclude wattiz domain)
+            const mailLinks = await page.locator('[href^="mailto:"]').all();
+            for (const link of mailLinks) {
+                const href = await link.getAttribute('href').catch(() => '') || '';
+                const email = href.replace('mailto:', '');
+                if (email && !email.includes('wattiz')) {
+                    customerEmail = email;
+                    break;
+                }
+            }
+
+            // Fallback: look for email pattern in address blocks (exclude wattiz)
+            if (!customerEmail) {
+                for (let i = 0; i < blockCount; i++) {
+                    const blockText = await addressBlocks.nth(i).textContent().catch(() => '') || '';
+                    const emailMatch = blockText.match(/[\w.+-]+@[\w.-]+\.\w+/);
+                    if (emailMatch && !emailMatch[0].includes('wattiz')) {
+                        customerEmail = emailMatch[0];
+                        break;
+                    }
+                }
+            }
+
             customerPhone = await page.locator('[href^="tel:"]').first().textContent().catch(() => '') || '';
         } catch (error) {
             // Customer details not available
         }
 
-        // Extract line items
-        const items: any[] = [];
-        const itemRows = page.locator('.order-products table tbody tr, .product-line-row');
-        const itemCount = await itemRows.count();
+        // Extract line items from product table
+        // Look for the products section specifically
+        const items: WattizLineItem[] = [];
 
-        for (let i = 0; i < itemCount; i++) {
-            const itemRow = itemRows.nth(i);
-            const name = await itemRow.locator('.product-name, td:first-child').textContent() || '';
-            const qty = await itemRow.locator('.qty, td:nth-child(2)').textContent() || '1';
-            const total = await itemRow.locator('.price, td:last-child').textContent() || '';
+        // Try different selectors for the product table
+        const productSelectors = [
+            '#order-products table tbody tr',
+            '.order-products tbody tr',
+            '[id*="product"] table tbody tr',
+            'table.table-striped tbody tr'
+        ];
 
-            items.push({
-                sku: '',
-                name: name.trim(),
-                quantity: parseInt(qty.replace(/\D/g, ''), 10) || 1,
-                price: '',
-                total: total.trim(),
-            });
+        let productRows = null;
+        for (const selector of productSelectors) {
+            const rows = page.locator(selector);
+            const count = await rows.count();
+            if (count > 0) {
+                // Check if first row looks like a product (not a date or header)
+                const firstRowText = await rows.first().textContent().catch(() => '') || '';
+                if (!firstRowText.match(/^\d{4}[\/\-]\d{2}/) && firstRowText.length > 10) {
+                    productRows = rows;
+                    break;
+                }
+            }
+        }
+
+        if (productRows) {
+            const itemCount = await productRows.count();
+
+            for (let i = 0; i < itemCount; i++) {
+                const itemRow = productRows.nth(i);
+                const rowText = await itemRow.textContent() || '';
+
+                // Skip rows that look like dates or headers
+                if (rowText.match(/^\s*\d{4}[\/\-]\d{2}/) || rowText.includes('Product') || rowText.trim().length < 5) {
+                    continue;
+                }
+
+                const cells = itemRow.locator('td');
+                const cellCount = await cells.count();
+
+                if (cellCount >= 2) {
+                    const nameCell = await cells.nth(0).textContent() || '';
+                    const name = nameCell.replace(/\s+/g, ' ').trim();
+
+                    let qty = '1';
+                    let total = '';
+
+                    // Find quantity and price cells
+                    for (let c = 1; c < cellCount; c++) {
+                        const cellText = (await cells.nth(c).textContent() || '').trim();
+                        if (cellText.match(/^\d+$/) && parseInt(cellText, 10) < 1000) {
+                            qty = cellText;
+                        } else if (cellText.includes('€') || cellText.includes('$')) {
+                            total = cellText;
+                        }
+                    }
+
+                    // Only add if name looks like a product
+                    if (name && name.length > 5 && !name.match(/^\d{4}[\/\-]/)) {
+                        items.push({
+                            sku: '',
+                            name: name,
+                            quantity: parseInt(qty, 10) || 1,
+                            price: '',
+                            total: total,
+                        });
+                    }
+                }
+            }
         }
 
         // Look for invoice link
-        const invoiceLink = await page.locator('a[href*="invoice"], a.btn-primary[href*="pdf"]').first().getAttribute('href').catch(() => '');
+        const invoiceLink = await page.locator('a[href*="pdf-invoice"], a[href*="get-invoice"], a[href*="invoice"]').first().getAttribute('href').catch(() => '');
 
-        // Extract total
-        const totalText = await page.locator('.order-total, .total-value').last().textContent().catch(() => '');
+        // Extract total - look for price patterns in page
+        let totalText = '';
+
+        // Look for total amount in page text
+        const priceMatches = pageText.match(/€\s*[\d,]+\.?\d*/g) || [];
+        if (priceMatches.length > 0) {
+            // Get the largest price as total (usually the order total)
+            let maxPrice = 0;
+            let maxPriceText = '';
+            for (const priceText of priceMatches) {
+                const value = parseFloat(priceText.replace('€', '').replace(/\s/g, '').replace(',', '.'));
+                if (value > maxPrice) {
+                    maxPrice = value;
+                    maxPriceText = priceText.trim();
+                }
+            }
+            if (maxPriceText) {
+                totalText = maxPriceText;
+            }
+        }
+
+        // Fallback: try specific selectors
+        if (!totalText) {
+            const totalSelectors = [
+                '.order-totals tr:last-child td:last-child',
+                '.total-value',
+                'table tfoot td:last-child'
+            ];
+            for (const selector of totalSelectors) {
+                const text = await page.locator(selector).last().textContent().catch(() => '');
+                if (text && text.includes('€')) {
+                    totalText = text.trim();
+                    break;
+                }
+            }
+        }
 
         // Extract tracking number if available
-        const trackingNumber = await page.locator('.tracking-number, [href*="track"]').first().textContent().catch(() => '');
+        const trackingNumber = await page.locator('.tracking-number, [href*="track"], [data-tracking]').first().textContent().catch(() => '');
 
         return {
             id: orderId,
