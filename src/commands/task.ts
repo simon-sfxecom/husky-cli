@@ -9,6 +9,7 @@ import { execSync } from "child_process";
 import { resolveProject, fetchProjects, formatProjectList, type ResolveResult } from "../lib/project-resolver.js";
 import { requirePermission } from "../lib/permissions.js";
 import { ErrorHelpers, errorWithHint, errorWithAutoHint, ExplainTopic } from "../lib/error-hints.js";
+import { AgentLock, AgentLockError, checkWorktreeConflict } from "../lib/agent-lock.js";
 
 export const taskCommand = new Command("task")
   .description("Manage tasks");
@@ -277,6 +278,17 @@ taskCommand
         if (worktreeInfo) {
           console.log(`✓ Created worktree: ${worktreeInfo.path}`);
           console.log(`  Branch: ${worktreeInfo.branch}`);
+
+          // Acquire agent lock for the worktree
+          try {
+            const agentLock = new AgentLock(process.cwd(), worktreeInfo.path, workerId, sessionId);
+            agentLock.acquire();
+            console.log(`✓ Acquired agent lock`);
+          } catch (error) {
+            if (error instanceof AgentLockError) {
+              console.warn(`⚠ Warning: ${error.message}`);
+            }
+          }
         }
       }
 

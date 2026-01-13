@@ -2,6 +2,7 @@ import { Command } from "commander";
 import * as path from "path";
 import { WorktreeManager, WorktreeInfo } from "../lib/worktree.js";
 import { MergeLock, withMergeLock } from "../lib/merge-lock.js";
+import { AgentLock, AgentLockInfo } from "../lib/agent-lock.js";
 import { getConfig } from "./config.js";
 
 export const worktreeCommand = new Command("worktree")
@@ -90,13 +91,25 @@ worktreeCommand
   .option("--json", "Output as JSON")
   .action(async (options) => {
     try {
+      const projectDir = getProjectDir(options);
       const manager = getManager(options);
       const worktrees = manager.listWorktrees();
+      const agentLocks = AgentLock.listLocks(projectDir);
+
+      // Build a map of worktree path to lock info
+      const locksByPath = new Map<string, { info: ReturnType<typeof AgentLock.listLocks>[0]["info"]; isStale: boolean }>();
+      for (const lock of agentLocks) {
+        locksByPath.set(lock.worktree, { info: lock.info, isStale: lock.isStale });
+      }
 
       if (options.json) {
-        console.log(JSON.stringify({ worktrees, baseBranch: manager.getBaseBranch() }, null, 2));
+        const worktreesWithLocks = worktrees.map(wt => ({
+          ...wt,
+          agentLock: locksByPath.get(wt.path) || null,
+        }));
+        console.log(JSON.stringify({ worktrees: worktreesWithLocks, baseBranch: manager.getBaseBranch(), agentLocks }, null, 2));
       } else {
-        printWorktreeList(worktrees, manager.getBaseBranch());
+        printWorktreeList(worktrees, manager.getBaseBranch(), locksByPath);
       }
     } catch (error) {
       console.error("Error listing worktrees:", error instanceof Error ? error.message : error);
@@ -112,6 +125,7 @@ worktreeCommand
   .option("--json", "Output as JSON")
   .action(async (sessionName, options) => {
     try {
+      const projectDir = getProjectDir(options);
       const manager = getManager(options);
       const info = manager.getWorktree(sessionName);
 
@@ -123,10 +137,14 @@ worktreeCommand
       const changedFiles = manager.getChangedFiles(sessionName);
       const hasUncommitted = manager.hasUncommittedChanges(sessionName);
 
+      // Check for agent lock
+      const agentLocks = AgentLock.listLocks(projectDir);
+      const agentLock = agentLocks.find(l => l.worktree === info.path) || null;
+
       if (options.json) {
-        console.log(JSON.stringify({ ...info, changedFiles, hasUncommittedChanges: hasUncommitted }, null, 2));
+        console.log(JSON.stringify({ ...info, changedFiles, hasUncommittedChanges: hasUncommitted, agentLock }, null, 2));
       } else {
-        printWorktreeDetail(info, changedFiles, hasUncommitted);
+        printWorktreeDetail(info, changedFiles, hasUncommitted, agentLock);
       }
     } catch (error) {
       console.error("Error getting worktree info:", error instanceof Error ? error.message : error);
@@ -338,14 +356,18 @@ worktreeCommand
       } else {
         // Just cleanup stale
         manager.cleanupStale();
-        const staleLocks = MergeLock.cleanupStale(projectDir);
+        const staleMergeLocks = MergeLock.cleanupStale(projectDir);
+        const staleAgentLocks = AgentLock.cleanupStale(projectDir);
 
         if (options.json) {
-          console.log(JSON.stringify({ staleLocksRemoved: staleLocks, type: "stale" }, null, 2));
+          console.log(JSON.stringify({ staleMergeLocksRemoved: staleMergeLocks, staleAgentLocksRemoved: staleAgentLocks, type: "stale" }, null, 2));
         } else {
           console.log("Cleaned up stale worktrees and locks");
-          if (staleLocks > 0) {
-            console.log(`  Removed ${staleLocks} stale lock(s)`);
+          if (staleMergeLocks > 0) {
+            console.log(`  Removed ${staleMergeLocks} stale merge lock(s)`);
+          }
+          if (staleAgentLocks > 0) {
+            console.log(`  Removed ${staleAgentLocks} stale agent lock(s)`);
           }
         }
       }
@@ -399,23 +421,36 @@ worktreeCommand
   });
 
 // Print helpers
-function printWorktreeList(worktrees: WorktreeInfo[], baseBranch: string) {
+function printWorktreeList(
+  worktrees: WorktreeInfo[],
+  baseBranch: string,
+  locksByPath: Map<string, { info: AgentLockInfo; isStale: boolean }>
+) {
   console.log(`\n  Base branch: ${baseBranch}`);
-  console.log("  " + "-".repeat(80));
+  console.log("  " + "-".repeat(90));
 
   if (worktrees.length === 0) {
     console.log("  No worktrees found.");
     console.log("  Create one with: husky worktree create <session-name>");
   } else {
     console.log(
-      `  ${"SESSION".padEnd(20)} ${"BRANCH".padEnd(25)} ${"COMMITS".padEnd(8)} ${"CHANGES"}`
+      `  ${"SESSION".padEnd(20)} ${"BRANCH".padEnd(25)} ${"COMMITS".padEnd(8)} ${"CHANGES".padEnd(20)} ${"AGENT"}`
     );
-    console.log("  " + "-".repeat(80));
+    console.log("  " + "-".repeat(90));
 
     for (const wt of worktrees) {
       const changes = `+${wt.stats.additions}/-${wt.stats.deletions} (${wt.stats.filesChanged} files)`;
+      const lock = locksByPath.get(wt.path);
+      let agentInfo = "";
+      if (lock) {
+        if (lock.isStale) {
+          agentInfo = `[stale] ${lock.info.workerId}`;
+        } else {
+          agentInfo = `${lock.info.workerId} (PID: ${lock.info.pid})`;
+        }
+      }
       console.log(
-        `  ${wt.sessionName.padEnd(20)} ${wt.branch.padEnd(25)} ${String(wt.stats.commitCount).padEnd(8)} ${changes}`
+        `  ${wt.sessionName.padEnd(20)} ${wt.branch.padEnd(25)} ${String(wt.stats.commitCount).padEnd(8)} ${changes.padEnd(20)} ${agentInfo}`
       );
     }
   }
@@ -426,7 +461,8 @@ function printWorktreeList(worktrees: WorktreeInfo[], baseBranch: string) {
 function printWorktreeDetail(
   info: WorktreeInfo,
   changedFiles: Array<{ status: string; file: string }>,
-  hasUncommitted: boolean
+  hasUncommitted: boolean,
+  agentLock: { worktree: string; info: AgentLockInfo; isStale: boolean } | null
 ) {
   console.log(`\n  Worktree: ${info.sessionName}`);
   console.log("  " + "-".repeat(60));
@@ -440,6 +476,20 @@ function printWorktreeDetail(
   console.log(`    Files:    ${info.stats.filesChanged}`);
   console.log(`    Added:    +${info.stats.additions}`);
   console.log(`    Removed:  -${info.stats.deletions}`);
+
+  if (agentLock) {
+    console.log(`\n  Agent Lock:`);
+    if (agentLock.isStale) {
+      console.log(`    Status:   STALE (process no longer running)`);
+    } else {
+      console.log(`    Status:   ACTIVE`);
+    }
+    console.log(`    Worker:   ${agentLock.info.workerId}`);
+    console.log(`    Session:  ${agentLock.info.sessionId}`);
+    console.log(`    PID:      ${agentLock.info.pid}`);
+    console.log(`    Host:     ${agentLock.info.hostname}`);
+    console.log(`    Since:    ${new Date(agentLock.info.timestamp).toISOString()}`);
+  }
 
   if (hasUncommitted) {
     console.log(`\n  ⚠ Has uncommitted changes`);
