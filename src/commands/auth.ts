@@ -8,11 +8,17 @@ import {
   canAccessKnowledgeBase 
 } from "../lib/permissions-cache.js";
 
+interface SessionAgent {
+  id: string;
+  name: string;
+  emoji?: string;
+}
+
 interface SessionResponse {
   token: string;
   expiresAt: string;
   role: string;
-  agent: string;
+  agent: SessionAgent;
 }
 
 const API_KEY_ROLES = [
@@ -394,7 +400,13 @@ authCommand
       }
 
       const session: SessionResponse = await res.json();
-      setSessionConfig(session);
+      // Extract agent id for storage (API returns object with id, name, emoji)
+      setSessionConfig({
+        token: session.token,
+        expiresAt: session.expiresAt,
+        role: session.role,
+        agent: session.agent.id,
+      });
 
       // Fetch and cache permissions for the new session role
       await fetchAndCacheRole();
@@ -402,7 +414,8 @@ authCommand
       if (options.json) {
         console.log(JSON.stringify({
           success: true,
-          agent: session.agent,
+          agent: session.agent.id,
+          agentName: session.agent.name,
           role: session.role,
           expiresAt: session.expiresAt,
         }, null, 2));
@@ -412,7 +425,7 @@ authCommand
       const expiresAt = new Date(session.expiresAt);
       console.log("\n✅ Session created");
       console.log("─".repeat(40));
-      console.log(`Agent:    ${session.agent}`);
+      console.log(`Agent:    ${session.agent.name} (${session.agent.id})`);
       console.log(`Role:     ${session.role}`);
       console.log(`Expires:  ${expiresAt.toLocaleString()}`);
       console.log("");
@@ -537,7 +550,13 @@ authCommand
       }
 
       const session: SessionResponse = await res.json();
-      setSessionConfig(session);
+      // Extract agent id for storage (API returns object with id, name, emoji)
+      setSessionConfig({
+        token: session.token,
+        expiresAt: session.expiresAt,
+        role: session.role,
+        agent: session.agent.id,
+      });
 
       // Refresh permissions for the session role
       await fetchAndCacheRole();
@@ -545,7 +564,8 @@ authCommand
       if (options.json) {
         console.log(JSON.stringify({
           success: true,
-          agent: session.agent,
+          agent: session.agent.id,
+          agentName: session.agent.name,
           role: session.role,
           expiresAt: session.expiresAt,
         }, null, 2));
@@ -553,7 +573,7 @@ authCommand
       }
 
       const expiresAt = new Date(session.expiresAt);
-      console.log(`✅ Session refreshed for '${session.agent}' (expires: ${expiresAt.toLocaleString()})`);
+      console.log(`✅ Session refreshed for '${session.agent.name}' (expires: ${expiresAt.toLocaleString()})`);
     } catch (error) {
       console.error(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
       process.exit(1);

@@ -4,11 +4,17 @@ const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
 
 let refreshInProgress: Promise<SessionResponse | null> | null = null;
 
+interface SessionAgent {
+  id: string;
+  name: string;
+  emoji?: string;
+}
+
 interface SessionResponse {
   token: string;
   expiresAt: string;
   role: string;
-  agent: string;
+  agent: SessionAgent;
 }
 
 function isSessionExpired(expiresAt: string | undefined): boolean {
@@ -39,7 +45,13 @@ async function doRefresh(agentName: string): Promise<SessionResponse | null> {
     if (!res.ok) return null;
 
     const session: SessionResponse = await res.json();
-    setSessionConfig(session);
+    // Extract agent id for storage (API returns object with id, name, emoji)
+    setSessionConfig({
+      token: session.token,
+      expiresAt: session.expiresAt,
+      role: session.role,
+      agent: session.agent.id,
+    });
     return session;
   } catch {
     return null;
