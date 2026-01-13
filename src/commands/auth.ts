@@ -408,6 +408,9 @@ authCommand
         agent: session.agent.id,
       });
 
+      // Clear permissions cache so next check uses the new session role
+      clearPermissionsCache();
+
       // Fetch and cache permissions for the new session role
       await fetchAndCacheRole();
 
@@ -453,6 +456,7 @@ authCommand
     }
 
     clearSessionConfig();
+    clearPermissionsCache();
 
     if (options.json) {
       console.log(JSON.stringify({ success: true, agent: session.agent }));
@@ -558,7 +562,8 @@ authCommand
         agent: session.agent.id,
       });
 
-      // Refresh permissions for the session role
+      // Clear permissions cache and refresh for the session role
+      clearPermissionsCache();
       await fetchAndCacheRole();
 
       if (options.json) {

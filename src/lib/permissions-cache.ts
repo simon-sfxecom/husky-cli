@@ -1,4 +1,4 @@
-import { getConfig } from "../commands/config.js";
+import { getConfig, isSessionActive } from "../commands/config.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -18,7 +18,18 @@ async function fetchPermissions(): Promise<CachedPermissions> {
         throw new Error("API not configured");
     }
 
+    // If there's an active session, use the session's role
+    // This ensures permissions match the logged-in agent, not the API key
+    const roleToFetch = isSessionActive() && config.sessionRole
+        ? config.sessionRole
+        : undefined;
+
+    // Build URL - if we have a session role, request permissions for that specific role
     const url = new URL("/api/auth/whoami", config.apiUrl);
+    if (roleToFetch) {
+        url.searchParams.set("role", roleToFetch);
+    }
+
     const res = await fetch(url.toString(), {
         method: "GET",
         headers: {
@@ -38,16 +49,48 @@ async function fetchPermissions(): Promise<CachedPermissions> {
         scopes?: string[];
     };
 
-    const kbPermissions = data.permissions
+    // If we have a session role, override the returned role with the session role
+    // and fetch permissions for that role
+    const effectiveRole = roleToFetch || data.role;
+    const effectivePermissions = roleToFetch
+        ? await fetchPermissionsForRole(config.apiUrl, config.apiKey, roleToFetch)
+        : data.permissions;
+
+    const kbPermissions = effectivePermissions
         .filter((p: string) => p.startsWith("kb:"))
         .map((p: string) => p.replace("kb:", ""));
 
     return {
-        role: data.role,
-        permissions: data.permissions,
+        role: effectiveRole,
+        permissions: effectivePermissions,
         knowledgeBases: kbPermissions,
         fetchedAt: Date.now(),
     };
+}
+
+async function fetchPermissionsForRole(apiUrl: string, apiKey: string, role: string): Promise<string[]> {
+    // Use the /permissions/:role endpoint to get permissions for a specific role
+    const url = new URL(`/api/auth/permissions/${encodeURIComponent(role)}`, apiUrl);
+
+    const res = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+            "x-api-key": apiKey,
+            "Content-Type": "application/json",
+        },
+    });
+
+    if (!res.ok) {
+        // Fall back to empty permissions if fetch fails
+        return [];
+    }
+
+    const data = await res.json() as {
+        role: string;
+        permissions: string[];
+    };
+
+    return data.permissions || [];
 }
 
 export async function getPermissions(): Promise<CachedPermissions> {
