@@ -131,11 +131,13 @@ export async function fetchAndCacheRole(): Promise<{ role?: AgentRole; permissio
       // Check if we have fresh permissions for this session
       const needsPermissionsFetch = !config.roleLastChecked || !config.permissions;
 
-      if (needsPermissionsFetch && config.apiUrl) {
+      if (needsPermissionsFetch && config.apiUrl && config.apiKey) {
         try {
-          const url = new URL("/api/auth/whoami", config.apiUrl);
+          // Fetch permissions for the session role using API key
+          // (Bearer tokens are not accepted by /api/auth/whoami)
+          const url = new URL(`/api/auth/permissions/${encodeURIComponent(config.sessionRole)}`, config.apiUrl);
           const res = await fetch(url.toString(), {
-            headers: { Authorization: `Bearer ${config.sessionToken}` },
+            headers: { "x-api-key": config.apiKey },
           });
 
           if (res.ok) {
