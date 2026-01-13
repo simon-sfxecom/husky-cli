@@ -13,6 +13,9 @@ import { customersCommand } from "./biz/customers.js";
 import { seatableCommand } from "./biz/seatable.js";
 import { qdrantCommand } from "./biz/qdrant.js";
 import { gotessCommand } from "./biz/gotess.js";
+import { skuterzoneCommand } from "./biz/skuterzone.js";
+import { emoveCommand } from "./biz/emove.js";
+import { wattizCommand } from "./biz/wattiz.js";
 import { guards } from "../lib/permissions.js";
 
 export const bizCommand = new Command("biz")
@@ -24,6 +27,9 @@ export const bizCommand = new Command("biz")
     .addCommand(customersCommand)
     .addCommand(seatableCommand)
     .addCommand(qdrantCommand)
-    .addCommand(gotessCommand);
+    .addCommand(gotessCommand)
+    .addCommand(skuterzoneCommand)
+    .addCommand(emoveCommand)
+    .addCommand(wattizCommand);
 
 export default bizCommand;

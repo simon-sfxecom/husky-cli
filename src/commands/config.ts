@@ -45,6 +45,13 @@ interface Config {
   skuterzoneUsername?: string;
   skuterzonePassword?: string;
   skuterzoneBaseUrl?: string;
+  emoveUsername?: string;
+  emovePassword?: string;
+  emoveBaseUrl?: string;
+  wattizUsername?: string;
+  wattizPassword?: string;
+  wattizBaseUrl?: string;
+  wattizLanguage?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -265,6 +272,15 @@ configCommand
       "skuterzone-username": "skuterzoneUsername",
       "skuterzone-password": "skuterzonePassword",
       "skuterzone-base-url": "skuterzoneBaseUrl",
+      // Emove Distribution
+      "emove-username": "emoveUsername",
+      "emove-password": "emovePassword",
+      "emove-base-url": "emoveBaseUrl",
+      // Wattiz
+      "wattiz-username": "wattizUsername",
+      "wattiz-password": "wattizPassword",
+      "wattiz-base-url": "wattizBaseUrl",
+      "wattiz-language": "wattizLanguage",
     };
 
     const configKey = keyMappings[key];
@@ -281,6 +297,8 @@ configCommand
       console.log("  Gemini:   gemini-api-key");
       console.log("  NocoDB:   nocodb-api-token, nocodb-base-url, nocodb-workspace-id");
       console.log("  Skuterzone: skuterzone-username, skuterzone-password, skuterzone-base-url");
+      console.log("  Emove: emove-username, emove-password, emove-base-url");
+      console.log("  Wattiz: wattiz-username, wattiz-password, wattiz-base-url, wattiz-language");
       console.log("  Brain:    agent-type");
       console.error("\n💡 For configuration help: husky explain config");
       process.exit(1);
@@ -314,7 +332,7 @@ configCommand
     saveConfig(config);
 
     // Mask sensitive values in output
-    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token", "gemini-api-key", "nocodb-api-token", "skuterzone-username", "skuterzone-password"];
+    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token", "gemini-api-key", "nocodb-api-token", "skuterzone-username", "skuterzone-password", "emove-username", "emove-password", "wattiz-username", "wattiz-password"];
     const displayValue = sensitiveKeys.includes(key) ? "***" : value;
     console.log(`✓ Set ${key} = ${displayValue}`);
   });
