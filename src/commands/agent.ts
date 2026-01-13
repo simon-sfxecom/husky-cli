@@ -21,7 +21,7 @@ interface AgentOptions {
 }
 
 // Agent registration and messaging types
-type AgentRole = "supervisor" | "worker" | "reviewer" | "support";
+type AgentRole = "supervisor" | "worker" | "reviewer" | "support" | "e2e_agent" | "pr_agent";
 type AgentStatus = "online" | "offline" | "busy";
 
 interface RegisteredAgent {
@@ -32,7 +32,7 @@ interface RegisteredAgent {
   tmuxSession?: string;
   vmName?: string;
   status: AgentStatus;
-  lastHeartbeat?: string;
+  lastSeen?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -624,7 +624,7 @@ agentCommand
     }
 
     // Validate role
-    const validRoles: AgentRole[] = ["supervisor", "worker", "reviewer", "support"];
+    const validRoles: AgentRole[] = ["supervisor", "worker", "reviewer", "support", "e2e_agent", "pr_agent"];
     if (!validRoles.includes(options.role as AgentRole)) {
       console.error(`Error: Invalid role '${options.role}'.`);
       console.error(`  Valid roles: ${validRoles.join(", ")}`);
@@ -725,12 +725,12 @@ agentCommand
       for (const agent of agents) {
         const statusIcon = agent.status === "online" ? "\u2714" :
                           agent.status === "busy" ? "\u231B" : "\u2717";
-        const lastSeen = agent.lastHeartbeat
-          ? new Date(agent.lastHeartbeat).toLocaleString()
+        const lastSeenDisplay = agent.lastSeen
+          ? new Date(agent.lastSeen).toLocaleString()
           : "never";
 
         console.log(`  ${statusIcon} ${agent.emoji} ${agent.name} (${agent.id})`);
-        console.log(`      Role: ${agent.role} | Status: ${agent.status} | Last seen: ${lastSeen}`);
+        console.log(`      Role: ${agent.role} | Status: ${agent.status} | Last seen: ${lastSeenDisplay}`);
         if (agent.tmuxSession) {
           console.log(`      Tmux: ${agent.tmuxSession}`);
         }
@@ -784,7 +784,7 @@ agentCommand
         process.exit(1);
       }
 
-      const result = (await res.json()) as { status: AgentStatus; lastHeartbeat: string };
+      const result = (await res.json()) as { status: AgentStatus; lastSeen: string };
       console.log(`Heartbeat sent. Agent '${agentId}' is now ${result.status}.`);
     } catch (error) {
       console.error("Error sending heartbeat:", error);
