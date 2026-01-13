@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getConfig, setSessionConfig, clearSessionConfig, getSessionConfig } from "./config.js";
+import { getConfig, setSessionConfig, clearSessionConfig, getSessionConfig, fetchAndCacheRole } from "./config.js";
 import { 
   getPermissions, 
   clearPermissionsCache, 
@@ -46,6 +46,27 @@ interface CreateApiKeyResponse {
   warning: string;
 }
 
+/**
+ * Sanitize error messages to prevent sensitive data leakage.
+ * Truncates long messages and removes potential secrets.
+ */
+function sanitizeErrorMessage(message: string, maxLength = 200): string {
+  if (!message) return "Unknown error";
+
+  // Remove potential secrets (patterns like API keys, tokens, etc.)
+  let sanitized = message
+    .replace(/[a-zA-Z0-9_-]{32,}/g, "[REDACTED]") // Long alphanumeric strings
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]") // Bearer tokens
+    .replace(/key[=:]\s*[^\s,}]+/gi, "key=[REDACTED]"); // key=value patterns
+
+  // Truncate if too long
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.substring(0, maxLength) + "...";
+  }
+
+  return sanitized;
+}
+
 async function apiRequest<T>(
   path: string,
   options: { method?: string; body?: unknown } = {}
@@ -67,7 +88,8 @@ async function apiRequest<T>(
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(error.message || error.error || `HTTP ${res.status}`);
+    const rawMessage = error.message || error.error || `HTTP ${res.status}`;
+    throw new Error(sanitizeErrorMessage(rawMessage));
   }
 
   return res.json();
@@ -374,6 +396,9 @@ authCommand
       const session: SessionResponse = await res.json();
       setSessionConfig(session);
 
+      // Fetch and cache permissions for the new session role
+      await fetchAndCacheRole();
+
       if (options.json) {
         console.log(JSON.stringify({
           success: true,
@@ -513,6 +538,9 @@ authCommand
 
       const session: SessionResponse = await res.json();
       setSessionConfig(session);
+
+      // Refresh permissions for the session role
+      await fetchAndCacheRole();
 
       if (options.json) {
         console.log(JSON.stringify({

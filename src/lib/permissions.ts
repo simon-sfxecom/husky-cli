@@ -8,7 +8,7 @@
 import { getConfig, hasPermission, getRole, fetchAndCacheRole, clearRoleCache } from "../commands/config.js";
 import { ExplainTopic } from "./error-hints.js";
 
-// Agent roles (must match dashboard types.ts)
+// Agent roles (must match dashboard types.ts and config.ts VALID_ROLES)
 export type AgentRole =
   | "admin"
   | "supervisor"
@@ -17,7 +17,9 @@ export type AgentRole =
   | "e2e_agent"
   | "pr_agent"
   | "support"
-  | "devops";
+  | "devops"
+  | "purchasing"
+  | "ops";
 
 /**
  * Check if current user has a specific permission.
@@ -52,8 +54,7 @@ const workerPermissionHints: Record<string, string[]> = {
  * Use this at the start of command handlers to enforce RBAC.
  */
 export function requirePermission(permission: string): void {
-  const config = getConfig();
-  const role = config.role;
+  const role = getRole(); // Uses session role if active, otherwise API key role
 
   if (!hasPermission(permission)) {
     console.error(`Error: Permission denied (${permission})`);
@@ -82,11 +83,11 @@ export function requirePermission(permission: string): void {
 export function requireAnyPermission(permissions: string[]): void {
   const hasAny = permissions.some((p) => hasPermission(p));
   if (!hasAny) {
-    const config = getConfig();
+    const role = getRole(); // Uses session role if active
     console.error(`Error: Permission denied`);
     console.error(`Required: one of [${permissions.join(", ")}]`);
-    if (config.role) {
-      console.error(`Your role (${config.role}) does not have these permissions.`);
+    if (role) {
+      console.error(`Your role (${role}) does not have these permissions.`);
     }
     console.error(`\n💡 For configuration help: husky explain ${ExplainTopic.CONFIG}`);
     process.exit(1);
@@ -105,16 +106,15 @@ export function getCurrentRole(): AgentRole | undefined {
  * Check if current agent has one of the specified roles.
  */
 export function hasRole(...roles: AgentRole[]): boolean {
-  const config = getConfig();
-  return roles.includes(config.role as AgentRole);
+  const currentRole = getRole(); // Uses session role if active
+  return currentRole ? roles.includes(currentRole) : false;
 }
 
 /**
  * Require one of the specified roles, exit if not granted.
  */
 export function requireRole(...roles: AgentRole[]): void {
-  const config = getConfig();
-  const currentRole = config.role as AgentRole | undefined;
+  const currentRole = getRole(); // Uses session role if active
 
   if (!currentRole || !roles.includes(currentRole)) {
     console.error(`Error: Role required: ${roles.join(" or ")}`);
@@ -160,9 +160,10 @@ export async function handleApiResponse(
     console.error("Refreshing permissions...");
     await refreshPermissions();
 
+    const role = getRole(); // Uses session role if active
     const config = getConfig();
-    if (config.role) {
-      console.error(`Your role (${config.role}) does not have permission for this operation.`);
+    if (role) {
+      console.error(`Your role (${role}) does not have permission for this operation.`);
       if (config.permissions) {
         console.error(`Current permissions: ${config.permissions.join(", ")}`);
       }

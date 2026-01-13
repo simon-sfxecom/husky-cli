@@ -1,14 +1,24 @@
 import { Command } from "commander";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { ErrorHelpers, errorWithHint, ExplainTopic } from "../lib/error-hints.js";
+
+// Valid agent roles - used for runtime validation
+const VALID_ROLES = ["admin", "supervisor", "worker", "reviewer", "e2e_agent", "pr_agent", "support", "devops", "purchasing", "ops"] as const;
 
 const CONFIG_DIR = join(homedir(), ".husky");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 // Agent roles for RBAC (must match dashboard types)
-type AgentRole = "supervisor" | "worker" | "reviewer" | "e2e_agent" | "pr_agent" | "support";
+type AgentRole = typeof VALID_ROLES[number];
+
+/**
+ * Validate if a string is a valid AgentRole
+ */
+function isValidRole(role: string): role is AgentRole {
+  return VALID_ROLES.includes(role as AgentRole);
+}
 
 interface Config {
   apiUrl?: string;
@@ -93,28 +103,73 @@ export function getConfig(): Config {
 
 export function saveConfig(config: Config): void {
   if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
+    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 }); // rwx------ for directory
   }
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 }); // rw------- for file
+  // Ensure permissions are set even if file existed
+  try {
+    chmodSync(CONFIG_FILE, 0o600);
+  } catch {
+    // Ignore chmod errors on Windows
+  }
 }
 
 /**
  * Fetch role and permissions from /api/auth/whoami
- * Caches the result in config for 1 hour
+ * Uses session token (Bearer) if available, otherwise falls back to API key.
+ * Caches the result in config for 1 hour.
  */
 export async function fetchAndCacheRole(): Promise<{ role?: AgentRole; permissions?: string[] }> {
   const config = getConfig();
 
-  // Check if we have cached role that's less than 1 hour old
+  // Check if there's an active session - if so, use session role directly
+  // Session roles are already validated by the server, no need to re-fetch
+  if (config.sessionToken && config.sessionRole && config.sessionExpiresAt) {
+    const expiresAt = new Date(config.sessionExpiresAt);
+    if (expiresAt > new Date()) {
+      // Session is active - fetch permissions for this session role if needed
+      // Check if we have fresh permissions for this session
+      const needsPermissionsFetch = !config.roleLastChecked || !config.permissions;
+
+      if (needsPermissionsFetch && config.apiUrl) {
+        try {
+          const url = new URL("/api/auth/whoami", config.apiUrl);
+          const res = await fetch(url.toString(), {
+            headers: { Authorization: `Bearer ${config.sessionToken}` },
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            // Update permissions cache (keep sessionRole as source of truth for role)
+            config.permissions = data.permissions;
+            config.roleLastChecked = new Date().toISOString();
+            saveConfig(config);
+            return { role: config.sessionRole as AgentRole, permissions: data.permissions };
+          }
+        } catch {
+          // Fall through to use cached permissions
+        }
+      }
+
+      // Return session role with cached permissions
+      return { role: config.sessionRole as AgentRole, permissions: config.permissions };
+    }
+  }
+
+  // No active session - use API key auth
+
+  // Check if we have cached role that's less than 5 minutes old
+  // Short TTL ensures revoked permissions are detected quickly
+  const PERMISSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   if (config.role && config.roleLastChecked) {
     const lastChecked = new Date(config.roleLastChecked);
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    if (lastChecked > oneHourAgo) {
+    const cacheExpiry = new Date(Date.now() - PERMISSION_CACHE_TTL_MS);
+    if (lastChecked > cacheExpiry) {
       return { role: config.role, permissions: config.permissions };
     }
   }
 
-  // Fetch fresh role/permissions
+  // Fetch fresh role/permissions using API key
   if (!config.apiUrl || !config.apiKey) {
     return {};
   }
@@ -159,10 +214,33 @@ export function hasPermission(permission: string): boolean {
 }
 
 /**
- * Get current role from config (may be undefined if not fetched)
+ * Get current role from config.
+ * Prefers sessionRole (from auth login) over role (from API key) when session is active.
+ * Validates that the role is a known valid role before returning.
  */
 export function getRole(): AgentRole | undefined {
-  return getConfig().role;
+  const config = getConfig();
+
+  // Check if there's an active (non-expired) session
+  if (config.sessionToken && config.sessionRole && config.sessionExpiresAt) {
+    const expiresAt = new Date(config.sessionExpiresAt);
+    if (expiresAt > new Date()) {
+      // Session is active, validate and use session role
+      if (isValidRole(config.sessionRole)) {
+        return config.sessionRole;
+      }
+      // Invalid role in session - treat as no session
+      console.error(`Warning: Invalid session role '${config.sessionRole}' in config`);
+      return undefined;
+    }
+  }
+
+  // Fall back to API key role (also validate)
+  if (config.role && isValidRole(config.role)) {
+    return config.role;
+  }
+
+  return undefined;
 }
 
 /**
@@ -193,12 +271,23 @@ export function setSessionConfig(session: {
   expiresAt: string;
   agent: string;
   role: string;
+  permissions?: string[];  // Optional: if provided by API, store directly
 }): void {
   const config = getConfig();
   config.sessionToken = session.token;
   config.sessionExpiresAt = session.expiresAt;
   config.sessionAgent = session.agent;
   config.sessionRole = session.role;
+  // Clear old permissions and role cache to force re-fetch for new session role
+  delete config.roleLastChecked;
+  if (session.permissions) {
+    // If permissions provided, use them directly
+    config.permissions = session.permissions;
+    config.roleLastChecked = new Date().toISOString();
+  } else {
+    // Clear permissions to force re-fetch
+    delete config.permissions;
+  }
   saveConfig(config);
 }
 
