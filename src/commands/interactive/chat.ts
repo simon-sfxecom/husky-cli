@@ -6,6 +6,7 @@
 
 import { select, input, confirm } from "@inquirer/prompts";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
+import { getAuthHeaders, ensureValidSession } from "../config.js";
 
 interface InboxMessage {
   id: string;
@@ -104,7 +105,7 @@ async function showInbox(config: ValidConfig): Promise<void> {
 
     const url = `${config.apiUrl}/api/supervisor/inbox${unreadOnly ? "?unread=true" : ""}`;
     const res = await fetch(url, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -147,7 +148,7 @@ async function showInbox(config: ValidConfig): Promise<void> {
 async function showPending(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/supervisor/pending`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -192,7 +193,7 @@ async function sendMessage(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({ message }),
     });
@@ -227,7 +228,7 @@ async function replyToMessage(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({ response }),
     });
@@ -250,14 +251,18 @@ async function watchMessages(config: ValidConfig): Promise<void> {
   console.log("\n  WATCH MODE");
   console.log("  " + "-".repeat(50));
   console.log("  Watching for new messages...");
+  console.log("  (Session token will auto-refresh if needed)");
   console.log("");
 
   let lastCheck = new Date().toISOString();
 
   const checkMessages = async () => {
     try {
+      // Ensure session is valid before each poll (auto-refreshes if needed)
+      await ensureValidSession();
+
       const res = await fetch(`${config.apiUrl}/api/supervisor/inbox?since=${encodeURIComponent(lastCheck)}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (res.ok) {
@@ -267,6 +272,8 @@ async function watchMessages(config: ValidConfig): Promise<void> {
           console.log(`  ${msg.text.substring(0, 80)}`);
           console.log("");
         }
+      } else if (res.status === 401) {
+        console.log(`  [${new Date().toLocaleTimeString()}] Auth error - will retry with refreshed token`);
       }
 
       lastCheck = new Date().toISOString();
@@ -290,7 +297,7 @@ async function watchMessages(config: ValidConfig): Promise<void> {
 async function showConversations(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/agent-conversations`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -328,7 +335,7 @@ async function showConversations(config: ValidConfig): Promise<void> {
 async function showSpaces(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/chat/spaces`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -381,7 +388,7 @@ async function askQuestion(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({ question, wait: waitForAnswer }),
     });
@@ -422,7 +429,7 @@ async function requestReview(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({ question }),
     });

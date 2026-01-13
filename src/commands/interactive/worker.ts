@@ -5,7 +5,7 @@
  */
 
 import { select, input, confirm } from "@inquirer/prompts";
-import { getConfig, setConfig } from "../config.js";
+import { getConfig, setConfig, getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
 
 interface Worker {
@@ -93,7 +93,7 @@ async function registerWorker(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ name }),
     });
@@ -127,7 +127,7 @@ async function registerWorker(config: ValidConfig): Promise<void> {
 async function listWorkers(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/workers`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -166,7 +166,7 @@ async function listWorkers(config: ValidConfig): Promise<void> {
 async function showActivity(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/workers/activity`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -216,7 +216,7 @@ async function sendHeartbeat(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ status: "active" }),
     });

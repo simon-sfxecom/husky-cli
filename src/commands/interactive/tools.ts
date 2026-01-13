@@ -5,6 +5,7 @@
  */
 
 import { select, input } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue } from "./utils.js";
 import { spawnSync } from "child_process";
 
@@ -298,7 +299,7 @@ async function agentMessage(): Promise<void> {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+              ...getAuthHeaders(),
             },
             body: JSON.stringify({
               type: "query",
@@ -339,7 +340,7 @@ async function agentMessage(): Promise<void> {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+              ...getAuthHeaders(),
             },
             body: JSON.stringify({
               type: "approval_request",
@@ -377,7 +378,7 @@ async function agentMessage(): Promise<void> {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+              ...getAuthHeaders(),
             },
             body: JSON.stringify({
               type: "status_update",

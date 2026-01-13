@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 
 interface Roadmap {
@@ -94,7 +95,7 @@ export async function roadmapsMenu(): Promise<void> {
 
 async function fetchRoadmaps(config: ValidConfig): Promise<Roadmap[]> {
   const res = await fetch(`${config.apiUrl}/api/roadmaps`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -119,7 +120,7 @@ async function selectRoadmap(config: ValidConfig, message: string): Promise<Road
 
   // Fetch full roadmap with phases/features
   const res = await fetch(`${config.apiUrl}/api/roadmaps/${roadmapId}`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) return null;
   return res.json();
@@ -222,7 +223,7 @@ async function createRoadmap(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         name,
@@ -296,7 +297,7 @@ async function updateRoadmap(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -333,7 +334,7 @@ async function addPhase(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         name,
@@ -412,7 +413,7 @@ async function addFeature(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         title,
@@ -524,7 +525,7 @@ async function updateFeature(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -589,7 +590,7 @@ async function convertFeature(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ priority, assignee }),
     });
@@ -649,7 +650,7 @@ async function deleteFeature(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/roadmaps/${roadmap.id}/features/${featureId}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -681,7 +682,7 @@ async function generateRoadmap(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         roadmapId: roadmap.id,
@@ -725,7 +726,7 @@ async function deleteRoadmap(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/roadmaps/${roadmap.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

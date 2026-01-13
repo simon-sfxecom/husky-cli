@@ -1,5 +1,6 @@
 import { select, input, confirm } from "@inquirer/prompts";
 import { execSync } from "child_process";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
 
 interface Changelog {
@@ -92,7 +93,7 @@ async function fetchChangelogs(config: ValidConfig, projectId?: string): Promise
     url.searchParams.set("projectId", projectId);
   }
   const res = await fetch(url.toString(), {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -100,7 +101,7 @@ async function fetchChangelogs(config: ValidConfig, projectId?: string): Promise
 
 async function fetchProjects(config: ValidConfig): Promise<Project[]> {
   const res = await fetch(`${config.apiUrl}/api/projects`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -125,7 +126,7 @@ async function selectChangelog(config: ValidConfig, message: string): Promise<Ch
 
   // Fetch full changelog
   const res = await fetch(`${config.apiUrl}/api/changelogs/${changelogId}`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) return null;
   return res.json();
@@ -265,7 +266,7 @@ async function generateChangelog(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         projectId,
@@ -347,7 +348,7 @@ async function publishChangelog(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         status: "published",
@@ -387,7 +388,7 @@ async function deleteChangelog(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/changelogs/${changelog.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

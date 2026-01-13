@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 
 interface VMSession {
@@ -61,7 +62,7 @@ export async function vmSessionsMenu(): Promise<void> {
 
 async function fetchVMSessions(config: ValidConfig): Promise<VMSession[]> {
   const res = await fetch(`${config.apiUrl}/api/vm-sessions`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   const data = await res.json();
@@ -119,7 +120,7 @@ async function viewVMSession(config: ValidConfig): Promise<void> {
     if (!session) return;
 
     const res = await fetch(`${config.apiUrl}/api/vm-sessions/${session.id}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -173,7 +174,7 @@ async function createVMSession(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         name,
@@ -212,7 +213,7 @@ async function startVM(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/vm-sessions/${session.id}/start`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -236,7 +237,7 @@ async function stopVM(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/vm-sessions/${session.id}/stop`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -259,7 +260,7 @@ async function viewLogs(config: ValidConfig): Promise<void> {
     if (!session) return;
 
     const res = await fetch(`${config.apiUrl}/api/vm-sessions/${session.id}/logs?tail=30`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -308,7 +309,7 @@ async function approvePlan(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/vm-sessions/${session.id}/approve`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -343,7 +344,7 @@ async function deleteVMSession(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/vm-sessions/${session.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

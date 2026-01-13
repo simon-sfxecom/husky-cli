@@ -5,7 +5,7 @@
  */
 
 import { select, input, confirm } from "@inquirer/prompts";
-import { getConfig, setConfig, setSessionConfig, clearSessionConfig } from "../config.js";
+import { getConfig, setConfig, setSessionConfig, clearSessionConfig, getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue } from "./utils.js";
 
 interface SessionInfo {
@@ -81,7 +81,7 @@ async function login(): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({ agent: agentName }),
     });

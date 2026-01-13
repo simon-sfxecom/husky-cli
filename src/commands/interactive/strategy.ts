@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 
 type GoalStatus = "not_started" | "in_progress" | "at_risk" | "completed";
@@ -90,7 +91,7 @@ export async function strategyMenu(): Promise<void> {
 async function fetchStrategy(config: ValidConfig): Promise<BusinessStrategy | null> {
   try {
     const res = await fetch(`${config.apiUrl}/api/business-strategy`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
     if (!res.ok) return null;
     return res.json();
@@ -177,7 +178,7 @@ async function setVision(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ vision }),
     });
@@ -210,7 +211,7 @@ async function setMission(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ mission }),
     });
@@ -299,7 +300,7 @@ async function addValue(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         type: "value",
@@ -358,7 +359,7 @@ async function updateValue(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ name, description }),
     });
@@ -410,7 +411,7 @@ async function deleteValue(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/business-strategy/values/${valueId}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -519,7 +520,7 @@ async function addGoal(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         type: "goal",
@@ -621,7 +622,7 @@ async function updateGoal(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -673,7 +674,7 @@ async function deleteGoal(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/business-strategy/goals/${goalId}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -771,7 +772,7 @@ async function addPersona(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         type: "persona",
@@ -840,7 +841,7 @@ async function updatePersona(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ name, description, characteristics }),
     });
@@ -892,7 +893,7 @@ async function deletePersona(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/business-strategy/personas/${personaId}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

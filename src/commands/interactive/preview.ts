@@ -5,6 +5,7 @@
  */
 
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
 
 interface PreviewDeployment {
@@ -62,7 +63,7 @@ export async function previewMenu(): Promise<void> {
 async function listPreviews(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/previews`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -110,7 +111,7 @@ async function previewStatus(config: ValidConfig): Promise<void> {
     });
 
     const res = await fetch(`${config.apiUrl}/api/previews/pr/${prNumber}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -169,7 +170,7 @@ async function deployPreview(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ prNumber: parseInt(prNumber) }),
     });
@@ -219,7 +220,7 @@ async function deletePreview(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/previews/pr/${prNumber}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -253,7 +254,7 @@ async function cleanupPreviews(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/previews/cleanup`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

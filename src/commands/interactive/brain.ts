@@ -5,6 +5,7 @@
  */
 
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
 
 interface Memory {
@@ -84,7 +85,7 @@ async function listMemories(config: ValidConfig): Promise<void> {
     });
 
     const res = await fetch(`${config.apiUrl}/api/brain/memories?limit=${limit}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -129,7 +130,7 @@ async function recallMemory(config: ValidConfig): Promise<void> {
     });
 
     const res = await fetch(`${config.apiUrl}/api/brain/recall?query=${encodeURIComponent(query)}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -180,7 +181,7 @@ async function rememberContent(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ content, tags }),
     });
@@ -219,7 +220,7 @@ async function publishMemory(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ visibility }),
     });
@@ -241,7 +242,7 @@ async function publishMemory(config: ValidConfig): Promise<void> {
 async function sharedMemories(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/brain/shared`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -284,7 +285,7 @@ async function boostMemory(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/brain/boost/${id}`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -321,7 +322,7 @@ async function archiveMemory(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/brain/archive/${id}`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -358,7 +359,7 @@ async function deleteMemory(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/brain/memories/${id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -390,7 +391,7 @@ async function cleanupMemories(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/brain/cleanup`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

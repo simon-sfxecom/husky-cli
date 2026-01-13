@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 
 interface Process {
@@ -49,7 +50,7 @@ export async function processesMenu(): Promise<void> {
 
 async function fetchProcesses(config: ValidConfig): Promise<Process[]> {
   const res = await fetch(`${config.apiUrl}/api/processes`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -105,7 +106,7 @@ async function viewProcess(config: ValidConfig): Promise<void> {
     if (!proc) return;
 
     const res = await fetch(`${config.apiUrl}/api/processes/${proc.id}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -174,7 +175,7 @@ async function createProcess(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         name,
@@ -251,7 +252,7 @@ async function updateProcess(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -288,7 +289,7 @@ async function deleteProcess(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/processes/${proc.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

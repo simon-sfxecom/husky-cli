@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 
 interface Workflow {
@@ -66,7 +67,7 @@ export async function workflowsMenu(): Promise<void> {
 
 async function fetchWorkflows(config: ValidConfig): Promise<Workflow[]> {
   const res = await fetch(`${config.apiUrl}/api/workflows`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -123,7 +124,7 @@ async function viewWorkflow(config: ValidConfig): Promise<void> {
     if (!wf) return;
 
     const res = await fetch(`${config.apiUrl}/api/workflows/${wf.id}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -211,7 +212,7 @@ async function createWorkflow(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         name,
@@ -303,7 +304,7 @@ async function updateWorkflow(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -340,7 +341,7 @@ async function deleteWorkflow(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/workflows/${wf.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -374,7 +375,7 @@ async function manageSteps(config: ValidConfig): Promise<void> {
 
     if (action === "list") {
       const res = await fetch(`${config.apiUrl}/api/workflows/${wf.id}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
       const fullWf = await res.json();
 
@@ -407,7 +408,7 @@ async function manageSteps(config: ValidConfig): Promise<void> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...(getAuthHeaders()),
         },
         body: JSON.stringify({ name, description: description || undefined }),
       });
@@ -420,7 +421,7 @@ async function manageSteps(config: ValidConfig): Promise<void> {
       await pressEnterToContinue();
     } else if (action === "delete") {
       const res = await fetch(`${config.apiUrl}/api/workflows/${wf.id}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
       const fullWf = await res.json();
 
@@ -441,7 +442,7 @@ async function manageSteps(config: ValidConfig): Promise<void> {
 
       const delRes = await fetch(`${config.apiUrl}/api/workflows/${wf.id}/steps/${stepId}`, {
         method: "DELETE",
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!delRes.ok) {
@@ -476,7 +477,7 @@ async function generateSteps(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ sop }),
     });

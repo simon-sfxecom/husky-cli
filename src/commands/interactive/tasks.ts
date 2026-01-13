@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 import { resolveProject } from "../../lib/project-resolver.js";
 
@@ -72,7 +73,7 @@ async function fetchTasks(config: ValidConfig, status?: string): Promise<Task[]>
   if (status) url.searchParams.set("status", status);
 
   const res = await fetch(url.toString(), {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
 
   if (!res.ok) throw new Error(`API returned ${res.status}`);
@@ -81,7 +82,7 @@ async function fetchTasks(config: ValidConfig, status?: string): Promise<Task[]>
 
 async function fetchProjects(config: ValidConfig): Promise<Project[]> {
   const res = await fetch(`${config.apiUrl}/api/projects`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) return [];
   return res.json();
@@ -138,7 +139,7 @@ async function viewTask(config: ValidConfig): Promise<void> {
     if (!task) return;
 
     const res = await fetch(`${config.apiUrl}/api/tasks/${task.id}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -255,7 +256,7 @@ async function createTask(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         title,
@@ -417,7 +418,7 @@ async function updateTask(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -443,7 +444,7 @@ async function startTask(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/tasks/${task.id}/start`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -473,7 +474,7 @@ async function markTaskDone(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ prUrl: prUrl || undefined }),
     });
@@ -510,7 +511,7 @@ async function deleteTask(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/tasks/${task.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

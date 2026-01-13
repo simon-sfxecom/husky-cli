@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
 
 interface Idea {
@@ -54,7 +55,7 @@ export async function ideasMenu(): Promise<void> {
 
 async function fetchIdeas(config: ValidConfig): Promise<Idea[]> {
   const res = await fetch(`${config.apiUrl}/api/ideas`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -112,7 +113,7 @@ async function viewIdea(config: ValidConfig): Promise<void> {
     if (!idea) return;
 
     const res = await fetch(`${config.apiUrl}/api/ideas/${idea.id}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -162,7 +163,7 @@ async function createIdea(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         title,
@@ -244,7 +245,7 @@ async function updateIdea(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -292,7 +293,7 @@ async function convertIdea(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({ priority, assignee }),
     });
@@ -332,7 +333,7 @@ async function deleteIdea(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/ideas/${idea.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

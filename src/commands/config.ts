@@ -300,6 +300,103 @@ export function clearSessionConfig(): void {
   saveConfig(config);
 }
 
+/**
+ * Check if there's an active (non-expired) session
+ */
+export function isSessionActive(): boolean {
+  const config = getConfig();
+  if (!config.sessionToken || !config.sessionExpiresAt) {
+    return false;
+  }
+  const expiresAt = new Date(config.sessionExpiresAt);
+  return expiresAt > new Date();
+}
+
+/**
+ * Check if the API is properly configured for making requests.
+ * Returns true if we have either an active session or an API key.
+ */
+export function isApiConfigured(): boolean {
+  const config = getConfig();
+  return Boolean(config.apiUrl && (config.apiKey || isSessionActive()));
+}
+
+/**
+ * Get authentication headers for API requests.
+ * Returns Bearer token if session is active, otherwise x-api-key.
+ * Use this for all API calls to ensure consistent auth.
+ */
+export function getAuthHeaders(): Record<string, string> {
+  const config = getConfig();
+
+  // Check if there's an active (non-expired) session
+  if (config.sessionToken && config.sessionExpiresAt) {
+    const expiresAt = new Date(config.sessionExpiresAt);
+    if (expiresAt > new Date()) {
+      // Session is active - use Bearer token
+      return { Authorization: `Bearer ${config.sessionToken}` };
+    }
+  }
+
+  // Fall back to API key
+  if (config.apiKey) {
+    return { "x-api-key": config.apiKey };
+  }
+
+  return {};
+}
+
+/**
+ * Ensure the session is valid, refreshing if needed.
+ * Call this before long-running operations (like watch modes).
+ * Returns true if session is valid (or was refreshed), false if no session/refresh failed.
+ */
+export async function ensureValidSession(): Promise<boolean> {
+  const config = getConfig();
+
+  if (!config.sessionToken || !config.sessionExpiresAt) {
+    return false; // No session, will use API key
+  }
+
+  const expiresAt = new Date(config.sessionExpiresAt);
+  const now = new Date();
+  const fiveMinutes = 5 * 60 * 1000;
+
+  // Refresh if expiring within 5 minutes
+  if (expiresAt.getTime() - now.getTime() < fiveMinutes) {
+    if (!config.apiUrl || !config.apiKey || !config.sessionAgent) {
+      return false; // Can't refresh without these
+    }
+
+    try {
+      const url = new URL("/api/auth/session", config.apiUrl);
+      const res = await fetch(url.toString(), {
+        method: "POST",
+        headers: {
+          "x-api-key": config.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ agent: config.sessionAgent }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSessionConfig({
+          token: data.token,
+          expiresAt: data.expiresAt,
+          agent: data.agent,
+          role: data.role,
+        });
+        return true;
+      }
+    } catch {
+      // Refresh failed, continue with current token if not expired
+    }
+  }
+
+  return expiresAt > now;
+}
+
 export function getSessionConfig(): {
   token?: string;
   expiresAt?: string;

@@ -5,6 +5,7 @@
  */
 
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
 
 interface ServiceHealth {
@@ -75,7 +76,7 @@ async function healthCheck(config: ValidConfig): Promise<void> {
     console.log("\n  Running health checks...\n");
 
     const res = await fetch(`${config.apiUrl}/api/infra/health`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -115,7 +116,7 @@ async function healthCheck(config: ValidConfig): Promise<void> {
 async function serviceStatus(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/infra/services`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -151,7 +152,7 @@ async function serviceStatus(config: ValidConfig): Promise<void> {
 async function vmStatus(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/vm-sessions`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -190,7 +191,7 @@ async function vmStatus(config: ValidConfig): Promise<void> {
 async function showMetrics(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/infra/metrics`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -223,7 +224,7 @@ async function showMetrics(config: ValidConfig): Promise<void> {
 async function showAlerts(config: ValidConfig): Promise<void> {
   try {
     const res = await fetch(`${config.apiUrl}/api/infra/alerts`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -279,7 +280,7 @@ async function restartService(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/infra/services/${encodeURIComponent(serviceName)}/restart`, {
       method: "POST",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

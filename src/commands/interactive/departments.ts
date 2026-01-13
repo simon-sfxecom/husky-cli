@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 
 interface Department {
@@ -49,7 +50,7 @@ export async function departmentsMenu(): Promise<void> {
 
 async function fetchDepartments(config: ValidConfig): Promise<Department[]> {
   const res = await fetch(`${config.apiUrl}/api/departments`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -105,7 +106,7 @@ async function viewDepartment(config: ValidConfig): Promise<void> {
     if (!dept) return;
 
     const res = await fetch(`${config.apiUrl}/api/departments/${dept.id}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -152,7 +153,7 @@ async function createDepartment(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         name,
@@ -221,7 +222,7 @@ async function updateDepartment(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -258,7 +259,7 @@ async function deleteDepartment(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/departments/${dept.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {

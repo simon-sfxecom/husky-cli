@@ -1,4 +1,5 @@
 import { select, input, confirm } from "@inquirer/prompts";
+import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 
 interface Project {
@@ -52,7 +53,7 @@ export async function projectsMenu(): Promise<void> {
 
 async function fetchProjects(config: ValidConfig): Promise<Project[]> {
   const res = await fetch(`${config.apiUrl}/api/projects`, {
-    headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+    headers: getAuthHeaders(),
   });
   if (!res.ok) throw new Error(`API returned ${res.status}`);
   return res.json();
@@ -109,7 +110,7 @@ async function viewProject(config: ValidConfig): Promise<void> {
     if (!project) return;
 
     const res = await fetch(`${config.apiUrl}/api/projects/${project.id}`, {
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
@@ -177,7 +178,7 @@ async function createProject(config: ValidConfig): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify({
         name,
@@ -281,7 +282,7 @@ async function updateProject(config: ValidConfig): Promise<void> {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
-        ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        ...(getAuthHeaders()),
       },
       body: JSON.stringify(updateData),
     });
@@ -318,7 +319,7 @@ async function deleteProject(config: ValidConfig): Promise<void> {
 
     const res = await fetch(`${config.apiUrl}/api/projects/${project.id}`, {
       method: "DELETE",
-      headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      headers: getAuthHeaders(),
     });
 
     if (!res.ok) {
