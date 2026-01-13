@@ -1,133 +1,91 @@
 import { createRequire } from "module";
+import { getConfig, isSessionActive } from "./config.js";
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../../package.json");
 
-export function generateLLMContext(): string {
+// Permission check helper (simplified - checks prefix match)
+function hasPermission(permissions: string[], required: string): boolean {
+    if (permissions.includes("*")) return true;
+    if (permissions.includes(required)) return true;
+    const [scope] = required.split(":");
+    if (permissions.includes(`${scope}:*`)) return true;
+    return false;
+}
+
+// Section generators
+function getHeader(role: string): string {
     return `# Husky CLI Reference (v${packageJson.version})
+
+> **Your Role:** \`${role}\`
 
 > [!CAUTION]
 > ## MANDATORY: You MUST Use Husky CLI
-> 
-> As an AI agent working in this environment, you are **REQUIRED** to use the Husky CLI for all business operations and task management.
-> 
+>
+> As an AI agent working in this environment, you are **REQUIRED** to use the Husky CLI for all operations.
+>
 > **DO NOT:**
-> - Make direct API calls to Billbee, Zendesk, or other services
-> - Make direct API calls to husky-api (use CLI instead)
+> - Make direct API calls to external services
 > - Bypass Husky CLI for task management
-> - Create custom integrations when Husky commands exist
-> 
+>
 > **ALWAYS:**
-> - Use \`husky biz\` commands for business operations
-> - Use \`husky task\` commands for task lifecycle
-> - Use \`husky worktree\` for Git isolation
-> - Use \`husky chat\` commands for Google Chat communication
 > - Check \`husky config test\` before operations
-
----
-
-## What is Husky?
-
-Husky is the **central orchestration layer** for AI agents. It provides:
-- **Dashboard API** - Task management, projects, roadmaps
-- **Billbee** - E-commerce orders and products
-- **Zendesk** - Customer support tickets
-- **SeaTable** - Supply chain and inventory
-- **Qdrant** - Vector database for semantic search
-- **Vertex AI** - Embeddings for similarity search
+> - Use the commands listed below for your role
 
 ---
 
 ## Configuration
 
 \`\`\`bash
-husky config set api-url <dashboard-url>
-husky config set api-key <key>
-husky config list
-husky config test
+husky config list                       # Show current config
+husky config test                       # Verify API connection
+husky auth session                      # Check session status
+husky auth permissions                  # Show your permissions
 \`\`\`
+`;
+}
 
+function getTaskSection(permissions: string[]): string {
+    const canCreate = hasPermission(permissions, "task:create");
+    const canStart = hasPermission(permissions, "task:start");
+    const canDone = hasPermission(permissions, "task:done");
+    const canComplete = hasPermission(permissions, "task:complete");
+
+    let section = `
 ---
 
-## Core Commands
+## Tasks
 
-### Tasks
 \`\`\`bash
 husky task list [--status <status>]     # List tasks
 husky task get <id>                     # Get task details
-husky task create                       # Create new task
-husky task start <id>                   # Start task (auto-creates worktree!)
-husky task start <id> --no-worktree     # Start without worktree
-husky task done <id> [--pr <url>]       # Mark task as done
-husky task update <id>                  # Update task fields
-husky task assign <id> <assignee>       # Assign task
-husky task log <id>                     # View task activity log
-husky task message <id> "msg"           # Post status message (positional)
-husky task message -m "msg" --id <id>   # Post status message (flags)
-husky task message -m "msg"             # Uses HUSKY_TASK_ID env var
-\`\`\`
+husky task message <id> "msg"           # Post status message
+`;
 
-### Projects
-\`\`\`bash
-husky project list                      # List projects
-husky project get <id>                  # Get project details
-husky project create                    # Create new project
-husky project tasks <id>                # List project tasks
-\`\`\`
+    if (canCreate) {
+        section += `husky task create                       # Create new task
+`;
+    }
+    if (canStart) {
+        section += `husky task start <id>                   # Start task (auto-creates worktree!)
+`;
+    }
+    if (canDone || canComplete) {
+        section += `husky task done <id> [--pr <url>]       # Mark task as done
+`;
+    }
 
-### Roadmaps
-\`\`\`bash
-husky roadmap list                      # List roadmaps
-husky roadmap get <id>                  # Get roadmap details
-husky roadmap create                    # Create new roadmap
-husky roadmap milestones <id>           # List milestones
-husky roadmap add-milestone <id>        # Add milestone to roadmap
-\`\`\`
+    section += `\`\`\`
+`;
+    return section;
+}
 
-### Ideas
-\`\`\`bash
-husky idea list                         # List ideas
-husky idea get <id>                     # Get idea details
-husky idea create                       # Create new idea
-husky idea vote <id>                    # Vote on idea
-\`\`\`
+function getWorktreeSection(): string {
+    return `
+---
 
-### Workflows
-\`\`\`bash
-husky workflow list                     # List workflows
-husky workflow get <id>                 # Get workflow details
-husky workflow create                   # Create new workflow
-husky workflow run <id>                 # Execute workflow
-\`\`\`
+## Worktrees (Git Isolation)
 
-### Departments
-\`\`\`bash
-husky department list                   # List departments
-husky department get <id>               # Get department details
-husky department members <id>           # List department members
-\`\`\`
-
-### Processes
-\`\`\`bash
-husky process list                      # List processes
-husky process get <id>                  # Get process details
-husky process run <id>                  # Run process
-\`\`\`
-
-### Strategy
-\`\`\`bash
-husky strategy list                     # List strategy items
-husky strategy get <id>                 # Get strategy details
-husky strategy update <id>              # Update strategy
-\`\`\`
-
-### Changelog
-\`\`\`bash
-husky changelog generate                # Generate changelog from commits
-husky changelog list                    # List changelogs
-\`\`\`
-
-### Worktrees (Git Isolation)
 \`\`\`bash
 husky worktree list                     # List worktrees
 husky worktree create <name>            # Create isolated worktree
@@ -136,94 +94,81 @@ husky worktree merge <name>             # Merge back to base branch
 husky worktree push <name>              # Push branch to remote
 husky worktree pr <name> -t "Title"     # Create pull request
 husky worktree remove <name>            # Remove worktree
-husky worktree sync-stats <name> --task-id <id>  # Sync stats to dashboard
 \`\`\`
+`;
+}
 
-### VM Sessions (Cloud Agents)
+function getPRSection(): string {
+    return `
+---
+
+## Pull Requests
+
 \`\`\`bash
-husky vm list                           # List VM sessions
-husky vm create                         # Create new VM
-husky vm status <id>                    # Get VM status
-husky vm ssh <id>                       # SSH into VM
-husky vm delete <id>                    # Delete VM
+husky worktree pr <name> -t "Title"     # Create PR from worktree
+husky worktree push <name>              # Push branch to remote
+husky worktree merge <name>             # Merge back to base
 \`\`\`
+`;
+}
 
-### Workers (Multi-Agent Coordination)
-\`\`\`bash
-husky worker whoami                     # Show current worker identity
-husky worker register                   # Register worker with API
-husky worker list                       # List all workers
-husky worker sessions                   # List active sessions
-husky worker activity                   # Who is working on what
-\`\`\`
+function getBizSection(permissions: string[]): string {
+    const hasBizAll = hasPermission(permissions, "biz:*");
+    const hasBizRead = hasPermission(permissions, "biz:read");
+    const hasTickets = hasBizAll || hasPermission(permissions, "biz:tickets");
+    const hasOrders = hasBizAll || hasPermission(permissions, "biz:orders");
+    const hasProducts = hasBizAll || hasPermission(permissions, "biz:products");
 
-### Chat (Google Chat Integration)
-\`\`\`bash
-husky chat reply-chat --space <space-id> "<message>"  # Send message to Google Chat
-husky chat inbox                        # Get messages from Google Chat
-husky chat inbox --unread               # Only unread messages
-husky chat pending                      # Get pending messages from user
-husky chat send "<message>"             # Send message as supervisor
-husky chat reply <messageId> "<response>"  # Reply to specific message
-husky chat review "<question>"          # Request human review via Google Chat
-husky chat review-status <reviewId>     # Check review status
-husky chat watch                        # Watch for new messages (blocking)
-\`\`\`
-
-### Agent Messaging (agent-to-agent communication)
-\`\`\`bash
-husky agent-msg send --type <type> --title "<title>"  # Send message (types: approval_request, status_update, error_report, completion, query)
-husky agent-msg list                    # List messages
-husky agent-msg list --status pending   # Filter by status
-husky agent-msg pending                 # List pending messages (for supervisor)
-husky agent-msg respond <id> --approve  # Approve request
-husky agent-msg respond <id> --reject   # Reject request
-husky agent-msg get <id>                # Get message details
-husky agent-msg wait <id>               # Wait for response (blocking)
-\`\`\`
-
-### Utility Commands
-\`\`\`bash
-husky explain <command>                 # Explain CLI commands
-husky settings list                     # List dashboard settings
-husky settings set <key> <value>        # Update setting
-husky completion bash|zsh|fish          # Generate shell completion
-husky llm                               # Output LLM reference docs
-\`\`\`
-
+    let section = `
 ---
 
 ## Business Operations (husky biz)
+`;
 
+    if (hasTickets) {
+        section += `
 ### Tickets (Zendesk)
 \`\`\`bash
 husky biz tickets list                  # List recent tickets
 husky biz tickets get <id>              # Get ticket details
 husky biz tickets search "<query>"      # Search tickets
-husky biz tickets reply <id> "<msg>"    # Reply to ticket
+`;
+        if (hasBizAll) {
+            section += `husky biz tickets reply <id> "<msg>"    # Reply to ticket
 husky biz tickets note <id> "<note>"    # Add internal note
 husky biz tickets close <id>            # Close ticket
-
-# Prebuild (Semantic Search)
-husky biz tickets similar <id>          # Find similar tickets
-husky biz tickets find-similar "<q>"    # Semantic ticket search
+`;
+        }
+        section += `husky biz tickets similar <id>          # Find similar tickets
 husky biz tickets knowledge "<query>"   # Search resolved tickets
 \`\`\`
+`;
+    }
 
+    if (hasOrders || hasBizRead) {
+        section += `
 ### Orders (Billbee)
 \`\`\`bash
 husky biz orders list                   # List orders
 husky biz orders get <id>               # Get order details
 husky biz orders search "<query>"       # Search orders
 \`\`\`
+`;
+    }
 
+    if (hasProducts || hasBizRead) {
+        section += `
 ### Products (Billbee)
 \`\`\`bash
 husky biz products list                 # List products
 husky biz products get <id>             # Get product details
 husky biz products sku <sku>            # Get by SKU
 \`\`\`
+`;
+    }
 
+    if (hasBizAll || hasBizRead) {
+        section += `
 ### Customers
 \`\`\`bash
 husky biz customers search <email>      # Search by email
@@ -234,120 +179,334 @@ husky biz customers 360 <email>         # Full customer view (Billbee + Zendesk)
 ### SeaTable (Supply Chain)
 \`\`\`bash
 husky biz seatable tables               # List tables
-husky biz seatable rows <table>         # List rows
 husky biz seatable find-supplier "<q>"  # Search suppliers
-husky biz seatable order-status <no>    # Get order status
 husky biz seatable stock-check <sku>    # Check stock levels
 \`\`\`
+`;
+    }
 
-### Qdrant (Vector DB)
+    return section;
+}
+
+function getWorkflowSection(): string {
+    return `
+---
+
+## Workflows & Processes
+
+Diese Dokumentation hilft dir, Geschaeftsprozesse zu verstehen (z.B. Warenfluss, Bestellprozess).
+
 \`\`\`bash
-husky biz qdrant collections            # List collections
-husky biz qdrant info <name>            # Collection info
-husky biz qdrant count <name>           # Count points
-husky biz qdrant search <coll> "<q>"    # Semantic search
-\`\`\`
+husky workflow list                     # List workflows
+husky workflow get <id>                 # Get workflow details (inkl. Mermaid diagram)
 
+husky process list                      # List processes/SOPs
+husky process get <id>                  # Get process details
+\`\`\`
+`;
+}
+
+function getRoadmapSection(canWrite: boolean): string {
+    let section = `
+---
+
+## Roadmaps
+
+\`\`\`bash
+husky roadmap list                      # List roadmaps
+husky roadmap get <id>                  # Get roadmap details
+husky roadmap milestones <id>           # List milestones
+`;
+    if (canWrite) {
+        section += `husky roadmap create                    # Create new roadmap
+husky roadmap add-milestone <id>        # Add milestone
+`;
+    }
+    section += `\`\`\`
+`;
+    return section;
+}
+
+function getProjectSection(): string {
+    return `
+---
+
+## Projects
+
+\`\`\`bash
+husky project list                      # List projects
+husky project get <id>                  # Get project details
+husky project tasks <id>                # List project tasks
+\`\`\`
+`;
+}
+
+function getChatSection(permissions: string[]): string {
+    const canReply = hasPermission(permissions, "chat:reply") || hasPermission(permissions, "chat:*");
+
+    let section = `
+---
+
+## Chat (Google Chat Integration)
+
+\`\`\`bash
+husky chat inbox                        # Get messages
+husky chat inbox --unread               # Only unread messages
+husky chat pending                      # Get pending messages
+`;
+    if (canReply) {
+        section += `husky chat reply-chat --space <id> "msg" # Send message
+husky chat send "<message>"             # Send as supervisor
+husky chat review "<question>"          # Request human review
+\`\`\`
+`;
+    } else {
+        section += `\`\`\`
+`;
+    }
+    return section;
+}
+
+function getDeploySection(): string {
+    return `
+---
+
+## Deployment
+
+\`\`\`bash
+husky deploy sandbox                    # Deploy to sandbox environment
+\`\`\`
+`;
+}
+
+function getBrainSection(role: string): string {
+    return `
 ---
 
 ## Agent Brain (Lernender Agent)
 
 > [!IMPORTANT]
-> **MANDATORY WORKFLOW für Daily Ops (Support, Worker, etc.)**
+> **MANDATORY WORKFLOW**
 >
-> 1. **VOR der Arbeit**: \`husky brain recall\` - Prüfe ob ähnliches Problem bereits gelöst wurde
+> 1. **VOR der Arbeit**: \`husky brain recall\` - Pruefe ob aehnliches Problem bereits geloest wurde
 > 2. **NACH der Arbeit**: \`husky brain remember\` - Speichere neue Erkenntnisse
 
-### Role-Based Access
-
-Jeder Agent-Typ hat sein **eigenes Brain** und kann NUR auf eigene Memories zugreifen:
-
-| Agent Type | Brain Collection | Zugriff |
-|------------|------------------|---------|
-| \`support\` | brain_support | Nur Support-Wissen |
-| \`worker\` | brain_worker | Nur Worker-Wissen |
-| \`supervisor\` | brain_supervisor | Nur Supervisor-Wissen |
-| \`claude\` | brain_claude | Nur Claude-Wissen |
-
-Der Agent-Typ wird automatisch aus \`HUSKY_AGENT_TYPE\` oder Config gelesen.
-
-### Commands
+Dein Brain-Typ: \`${role}\`
 
 \`\`\`bash
-# ZUERST: Bestehendes Wissen abrufen
-husky brain recall "kunde kann nicht einloggen"    # Semantic Search
-husky brain recall "billing problem" --limit 10    # Mehr Ergebnisse
+# Wissen abrufen
+husky brain recall "suchbegriff"        # Semantic Search
+husky brain recall "problem" --limit 10 # Mehr Ergebnisse
 
-# DANACH: Neues Wissen speichern
-husky brain remember "Login-Problem bei Safari gelöst durch Cache löschen" --tags "login,safari,cache"
+# Wissen speichern
+husky brain remember "Loesung..." --tags "tag1,tag2"
 
 # Weitere Commands
 husky brain list                        # Alle eigenen Memories
-husky brain tags "billing,refund"       # Nach Tags suchen
+husky brain tags "tag1,tag2"            # Nach Tags suchen
 husky brain stats                       # Statistiken
-husky brain info                        # Aktuelle Konfiguration
-husky brain forget <id>                 # Memory löschen
 \`\`\`
-
-### Workflow Beispiel: Support Agent
-
-\`\`\`bash
-# 1. Neues Ticket kommt rein: "Kunde kann Rechnung nicht herunterladen"
-husky brain recall "rechnung download problem"
-
-# 2. Brain findet ähnliche gelöste Fälle:
-#    [92.3%] PDF-Download funktioniert nicht bei AdBlocker - Lösung: AdBlocker deaktivieren
-#    [87.1%] Rechnung lädt nicht - Browser-Cache war voll
-
-# 3. Agent nutzt Wissen, löst Ticket
-
-# 4. Nach Lösung: Neues Wissen speichern
-husky brain remember "Rechnungs-Download fehlgeschlagen wegen Corporate Firewall - IT musste *.billbee.io freigeben" --tags "billing,download,firewall,corporate"
-\`\`\`
-
-### Best Practices
-
-- **Tags verwenden**: Immer relevante Tags hinzufügen für bessere Auffindbarkeit
-- **Konkret sein**: "Safari Cache löschen löst Login" statt "Login Problem gelöst"
-- **Kontext speichern**: Ursache UND Lösung dokumentieren
-- **Regelmäßig recall**: Vor JEDER neuen Aufgabe prüfen ob Wissen existiert
-
----
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| \`HUSKY_ENV\` | Environment prefix (PROD/SANDBOX) |
-| \`HUSKY_AGENT_TYPE\` | Agent type for brain access (support/worker/supervisor/claude) |
-| \`HUSKY_AGENT_ID\` | Unique agent identifier |
-| \`PROD_BILLBEE_API_KEY\` | Billbee API key |
-| \`PROD_ZENDESK_API_TOKEN\` | Zendesk token |
-| \`PROD_SEATABLE_API_TOKEN\` | SeaTable token |
-| \`HUSKY_QDRANT_URL\` | Qdrant URL (internal: http://10.132.0.46:6333) |
-
-> **Note:** Qdrant runs on internal VM (VPC). No API key needed - access is secured by VPC isolation.
-
----
-
-## Usage Tips for LLM Agents
-
-1. **Always use \`--json\` flag** when available for structured output
-2. **Check config first**: \`husky config test\` before API calls
-3. **Use prebuild commands** for complex workflows (e.g., \`tickets similar\`)
-4. **Customer 360** combines Billbee + Zendesk data in one call
-5. **Semantic search** requires Qdrant and Vertex AI configured
 `;
 }
 
-export function printLLMContext(): void {
-    console.log(generateLLMContext());
+function getVMSection(): string {
+    return `
+---
+
+## VM Sessions (Cloud Agents)
+
+\`\`\`bash
+husky vm list                           # List VM sessions
+husky vm create                         # Create new VM
+husky vm status <id>                    # Get VM status
+husky vm ssh <id>                       # SSH into VM
+husky vm delete <id>                    # Delete VM
+\`\`\`
+`;
+}
+
+function getWorkerSection(): string {
+    return `
+---
+
+## Workers (Multi-Agent Coordination)
+
+\`\`\`bash
+husky worker whoami                     # Show current worker identity
+husky worker list                       # List all workers
+husky worker activity                   # Who is working on what
+\`\`\`
+`;
+}
+
+function getAgentMsgSection(): string {
+    return `
+---
+
+## Agent Messaging
+
+\`\`\`bash
+husky agent-msg send --type <type> --title "<title>"
+husky agent-msg list                    # List messages
+husky agent-msg pending                 # Pending messages
+husky agent-msg respond <id> --approve  # Approve request
+husky agent-msg wait <id>               # Wait for response
+\`\`\`
+`;
+}
+
+function getAdminSection(): string {
+    return `
+---
+
+## Admin Commands
+
+\`\`\`bash
+husky settings list                     # List dashboard settings
+husky settings set <key> <value>        # Update setting
+husky auth keys                         # List API keys
+husky auth create-key --name <n> --role <r>  # Create API key
+\`\`\`
+`;
+}
+
+function getTips(): string {
+    return `
+---
+
+## Tips
+
+1. **Immer \`--json\` flag** verwenden fuer strukturierten Output
+2. **Config testen**: \`husky config test\` vor API calls
+3. **Brain nutzen**: Vor jeder Aufgabe \`husky brain recall\`
+`;
+}
+
+// Role-based context generation
+export function generateLLMContext(role?: string, permissions?: string[]): string {
+    // Use provided values or try to get from config
+    const config = getConfig();
+    const effectiveRole = role || config.sessionRole || config.role || "worker";
+    const effectivePermissions = permissions || config.permissions || [];
+
+    let context = getHeader(effectiveRole);
+
+    // Task section - always included (all roles have task:read)
+    context += getTaskSection(effectivePermissions);
+
+    // Worktree section - for workers and pr_agent
+    if (hasPermission(effectivePermissions, "worktree:*") ||
+        hasPermission(effectivePermissions, "pr:create")) {
+        context += getWorktreeSection();
+    }
+
+    // PR section - for pr_agent
+    if (hasPermission(effectivePermissions, "pr:create") ||
+        hasPermission(effectivePermissions, "pr:merge")) {
+        context += getPRSection();
+    }
+
+    // Business operations - for support, purchasing, ops, workers with biz:read
+    if (hasPermission(effectivePermissions, "biz:*") ||
+        hasPermission(effectivePermissions, "biz:read") ||
+        hasPermission(effectivePermissions, "biz:tickets") ||
+        hasPermission(effectivePermissions, "biz:orders")) {
+        context += getBizSection(effectivePermissions);
+    }
+
+    // Workflows & Processes - for anyone with workflow:read or process:read
+    if (hasPermission(effectivePermissions, "workflow:read") ||
+        hasPermission(effectivePermissions, "workflow:*") ||
+        hasPermission(effectivePermissions, "process:read") ||
+        hasPermission(effectivePermissions, "process:*")) {
+        context += getWorkflowSection();
+    }
+
+    // Roadmaps - for workers, supervisors
+    if (hasPermission(effectivePermissions, "roadmap:read") ||
+        hasPermission(effectivePermissions, "roadmap:*")) {
+        const canWrite = hasPermission(effectivePermissions, "roadmap:*");
+        context += getRoadmapSection(canWrite);
+    }
+
+    // Projects - for workers
+    if (hasPermission(effectivePermissions, "project:read") ||
+        hasPermission(effectivePermissions, "project:*")) {
+        context += getProjectSection();
+    }
+
+    // Chat - for support, supervisor
+    if (hasPermission(effectivePermissions, "chat:read") ||
+        hasPermission(effectivePermissions, "chat:reply") ||
+        hasPermission(effectivePermissions, "chat:*")) {
+        context += getChatSection(effectivePermissions);
+    }
+
+    // Deploy - for e2e_agent
+    if (hasPermission(effectivePermissions, "deploy:sandbox") ||
+        hasPermission(effectivePermissions, "deploy:*")) {
+        context += getDeploySection();
+    }
+
+    // VM management - for supervisor, admin
+    if (hasPermission(effectivePermissions, "vm:*")) {
+        context += getVMSection();
+    }
+
+    // Worker coordination - for supervisor
+    if (hasPermission(effectivePermissions, "worker:*")) {
+        context += getWorkerSection();
+        context += getAgentMsgSection();
+    }
+
+    // Admin section
+    if (hasPermission(effectivePermissions, "admin:*") ||
+        hasPermission(effectivePermissions, "settings:*")) {
+        context += getAdminSection();
+    }
+
+    // Brain - always included
+    context += getBrainSection(effectiveRole);
+
+    // Tips - always included
+    context += getTips();
+
+    return context;
+}
+
+export async function printLLMContext(): Promise<void> {
+    // Try to fetch permissions if we have a session
+    const config = getConfig();
+    let permissions: string[] = [];
+    let role = config.sessionRole || config.role || "worker";
+
+    if (isSessionActive() && config.apiUrl && config.apiKey) {
+        try {
+            const { getPermissions } = await import("../lib/permissions-cache.js");
+            const perms = await getPermissions();
+            permissions = perms.permissions;
+            role = perms.role;
+        } catch {
+            // Use defaults if fetch fails
+            permissions = config.permissions || [];
+        }
+    } else {
+        permissions = config.permissions || [];
+    }
+
+    console.log(generateLLMContext(role, permissions));
 }
 
 // Command export for subcommand registration
 import { Command } from "commander";
 export const llmCommand = new Command("llm")
-    .description("Output LLM reference documentation (markdown)")
-    .action(() => {
-        printLLMContext();
+    .description("Output LLM reference documentation (role-based)")
+    .option("--full", "Show full documentation (all commands)")
+    .action(async (options) => {
+        if (options.full) {
+            // Show everything - use admin permissions
+            console.log(generateLLMContext("admin", ["*"]));
+        } else {
+            await printLLMContext();
+        }
     });

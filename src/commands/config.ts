@@ -598,28 +598,40 @@ configCommand
 
       console.log(`API connection successful (API URL: ${config.apiUrl})`);
 
-      // Now fetch role/permissions from whoami
-      const whoamiUrl = new URL("/api/auth/whoami", config.apiUrl);
-      const whoamiRes = await fetch(whoamiUrl.toString(), {
-        headers: { "x-api-key": apiKey },
-      });
+      // Check if there's an active session
+      const hasActiveSession = isSessionActive();
 
-      if (whoamiRes.ok) {
-        const data = await whoamiRes.json();
-        // Cache the role/permissions
-        const updatedConfig = getConfig();
-        updatedConfig.role = data.role;
-        updatedConfig.permissions = data.permissions;
-        updatedConfig.roleLastChecked = new Date().toISOString();
-        saveConfig(updatedConfig);
+      if (hasActiveSession) {
+        // Show session info instead of fetching from API
+        console.log(`\nSession Info:`);
+        console.log(`  Agent: ${config.sessionAgent || "(unknown)"}`);
+        console.log(`  Role: ${config.sessionRole || "(unknown)"}`);
+        console.log(`  Expires: ${config.sessionExpiresAt ? new Date(config.sessionExpiresAt).toLocaleString() : "(unknown)"}`);
+        console.log(`\n  Use 'husky auth permissions' to see full permissions.`);
+      } else {
+        // No session - fetch API key role from whoami
+        const whoamiUrl = new URL("/api/auth/whoami", config.apiUrl);
+        const whoamiRes = await fetch(whoamiUrl.toString(), {
+          headers: { "x-api-key": apiKey },
+        });
 
-        console.log(`\nRBAC Info:`);
-        console.log(`  Role: ${data.role || "(not assigned)"}`);
-        if (data.permissions && data.permissions.length > 0) {
-          console.log(`  Permissions: ${data.permissions.join(", ")}`);
-        }
-        if (data.agentId) {
-          console.log(`  Agent ID: ${data.agentId}`);
+        if (whoamiRes.ok) {
+          const data = await whoamiRes.json();
+          // Cache the role/permissions (only if no session)
+          const updatedConfig = getConfig();
+          updatedConfig.role = data.role;
+          updatedConfig.permissions = data.permissions;
+          updatedConfig.roleLastChecked = new Date().toISOString();
+          saveConfig(updatedConfig);
+
+          console.log(`\nRBAC Info (API Key):`);
+          console.log(`  Role: ${data.role || "(not assigned)"}`);
+          if (data.permissions && data.permissions.length > 0) {
+            console.log(`  Permissions: ${data.permissions.join(", ")}`);
+          }
+          if (data.agentId) {
+            console.log(`  Agent ID: ${data.agentId}`);
+          }
         }
       }
     } catch (error) {
