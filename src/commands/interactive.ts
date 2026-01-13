@@ -15,6 +15,17 @@ import { strategyMenu } from "./interactive/strategy.js";
 import { changelogMenu } from "./interactive/changelog.js";
 import { worktreesMenu } from "./interactive/worktrees.js";
 import { businessMenu } from "./interactive/business.js";
+
+// New menus (v1.15.0)
+import { chatMenu } from "./interactive/chat.js";
+import { brainMenu } from "./interactive/brain.js";
+import { authMenu } from "./interactive/auth.js";
+import { workerMenu } from "./interactive/worker.js";
+import { infraMenu } from "./interactive/infra.js";
+import { prMenu } from "./interactive/pr.js";
+import { previewMenu } from "./interactive/preview.js";
+import { toolsMenu } from "./interactive/tools.js";
+
 import { clearScreen, printHeader, pressEnterToContinue, ValidConfig } from "./interactive/utils.js";
 
 // Menu item type
@@ -36,25 +47,36 @@ export async function runInteractiveMode(): Promise<void> {
     printHeader();
 
     const mainMenuItems: MenuItem[] = [
-      { name: "Tasks", value: "tasks", description: "Manage tasks" },
-      { name: "Projects", value: "projects", description: "Manage projects" },
-      { name: "Ideas", value: "ideas", description: "Manage ideas" },
+      { name: "📋 Tasks", value: "tasks", description: "Manage tasks" },
+      { name: "📁 Projects", value: "projects", description: "Manage projects" },
+      { name: "💡 Ideas", value: "ideas", description: "Manage ideas" },
       { name: "---", value: "separator1", description: "" },
-      { name: "Roadmaps", value: "roadmaps", description: "Manage roadmaps" },
-      { name: "Workflows", value: "workflows", description: "Manage workflows" },
-      { name: "Departments", value: "departments", description: "Manage departments" },
-      { name: "Processes", value: "processes", description: "Manage processes" },
+      { name: "🗺️  Roadmaps", value: "roadmaps", description: "Manage roadmaps" },
+      { name: "⚡ Workflows", value: "workflows", description: "Manage workflows" },
+      { name: "🏢 Departments", value: "departments", description: "Manage departments" },
+      { name: "🔄 Processes", value: "processes", description: "Manage processes" },
       { name: "---", value: "separator2", description: "" },
-      { name: "VM Sessions", value: "vm", description: "Manage VM sessions" },
-      { name: "Worktrees", value: "worktrees", description: "Manage Git worktrees for agent isolation" },
+      { name: "💬 Chat", value: "chat", description: "Google Chat & messaging" },
+      { name: "🧠 Brain", value: "brain", description: "Agent memory & learnings" },
       { name: "---", value: "separator3", description: "" },
-      { name: "Business Operations", value: "business", description: "Billbee, Zendesk, SeaTable, Qdrant" },
-      { name: "Business Strategy", value: "strategy", description: "Manage business strategy" },
-      { name: "Changelog", value: "changelog", description: "Generate and manage changelogs" },
-      { name: "Dashboard Settings", value: "settings", description: "Manage dashboard settings" },
-      { name: "CLI Config", value: "config", description: "Configure CLI (API URL, API Key)" },
+      { name: "💻 VM Sessions", value: "vm", description: "Manage VM sessions" },
+      { name: "🌳 Worktrees", value: "worktrees", description: "Git worktrees for agent isolation" },
+      { name: "👷 Workers", value: "worker", description: "Worker registration" },
+      { name: "🔐 Auth", value: "auth", description: "API keys & sessions" },
       { name: "---", value: "separator4", description: "" },
-      { name: "Exit", value: "exit", description: "Exit interactive mode" },
+      { name: "🏗️  Infrastructure", value: "infra", description: "Monitoring & health" },
+      { name: "🔀 Pull Requests", value: "pr", description: "PR management" },
+      { name: "👁️  Previews", value: "preview", description: "PR preview deployments" },
+      { name: "---", value: "separator5", description: "" },
+      { name: "💼 Business Operations", value: "business", description: "Billbee, Zendesk, SeaTable, Qdrant" },
+      { name: "📈 Business Strategy", value: "strategy", description: "Manage business strategy" },
+      { name: "📝 Changelog", value: "changelog", description: "Generate and manage changelogs" },
+      { name: "🛠️  Tools", value: "tools", description: "YouTube, Image, Mermaid, E2E" },
+      { name: "---", value: "separator6", description: "" },
+      { name: "⚙️  Dashboard Settings", value: "settings", description: "Manage dashboard settings" },
+      { name: "🔧 CLI Config", value: "config", description: "Configure CLI (API URL, API Key)" },
+      { name: "---", value: "separator7", description: "" },
+      { name: "🚪 Exit", value: "exit", description: "Exit interactive mode" },
     ];
 
     try {
@@ -85,11 +107,32 @@ export async function runInteractiveMode(): Promise<void> {
         case "processes":
           await processesMenu();
           break;
+        case "chat":
+          await chatMenu();
+          break;
+        case "brain":
+          await brainMenu();
+          break;
         case "vm":
           await vmSessionsMenu();
           break;
         case "worktrees":
           await worktreesMenu();
+          break;
+        case "worker":
+          await workerMenu();
+          break;
+        case "auth":
+          await authMenu();
+          break;
+        case "infra":
+          await infraMenu();
+          break;
+        case "pr":
+          await prMenu();
+          break;
+        case "preview":
+          await previewMenu();
           break;
         case "strategy":
           await strategyMenu();
@@ -99,6 +142,9 @@ export async function runInteractiveMode(): Promise<void> {
           break;
         case "changelog":
           await changelogMenu();
+          break;
+        case "tools":
+          await toolsMenu();
           break;
         case "settings":
           await settingsMenu();
