@@ -601,6 +601,142 @@ brainCommand
     });
 
 // ============================================================================
+// Auto-Brain: Hook Integration Commands
+// ============================================================================
+
+brainCommand
+    .command("auto-recall <prompt>")
+    .description("Automatically search brain for relevant memories based on user prompt (for hook integration)")
+    .option("-a, --agent <id>", "Agent ID", DEFAULT_AGENT)
+    .option("-l, --limit <num>", "Max results", "3")
+    .option("-m, --min-score <score>", "Minimum similarity score (0-1)", "0.6")
+    .option("--agent-type <type>", `Agent type for database selection (${AGENT_TYPES.join(", ")})`)
+    .option("--format <format>", "Output format (hint, json, markdown)", "hint")
+    .option("--quiet", "Suppress output if no results found")
+    .action(async (prompt, options) => {
+        try {
+            if (prompt.length < 10) {
+                if (!options.quiet) {
+                    console.log("");
+                }
+                return;
+            }
+
+            const validFormats = ["hint", "json", "markdown"];
+            if (!validFormats.includes(options.format)) {
+                if (options.format === "json") {
+                    console.log(JSON.stringify({ success: false, error: `Invalid format. Use: ${validFormats.join(", ")}` }));
+                }
+                return;
+            }
+
+            const limit = parseInt(options.limit, 10);
+            const minScore = parseFloat(options.minScore);
+            if (isNaN(limit) || limit < 1) {
+                if (options.format === "json") {
+                    console.log(JSON.stringify({ success: false, error: "Invalid limit value" }));
+                }
+                return;
+            }
+            if (isNaN(minScore) || minScore < 0 || minScore > 1) {
+                if (options.format === "json") {
+                    console.log(JSON.stringify({ success: false, error: "min-score must be 0-1" }));
+                }
+                return;
+            }
+
+            const brain = createBrain(options.agent, options.agentType);
+            const results = await brain.recall(prompt, limit, minScore);
+
+            if (results.length === 0) {
+                if (!options.quiet) {
+                    console.log("");
+                }
+                return;
+            }
+
+            if (options.format === "json") {
+                console.log(JSON.stringify({ success: true, results }));
+                return;
+            }
+
+            const truncate = (text: string, maxLen: number) => {
+                return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+            };
+
+            if (options.format === "markdown") {
+                console.log("\n## 🧠 Brain Recall - Relevante Erinnerungen\n");
+                for (const r of results) {
+                    const tags = r.memory.tags.length > 0 ? ` (Tags: ${r.memory.tags.join(", ")})` : "";
+                    console.log(`- **[${(r.score * 100).toFixed(0)}%]** ${truncate(r.memory.content, 150)}${tags}`);
+                }
+                console.log("");
+                return;
+            }
+
+            console.log("\n🧠 BRAIN RECALL - Relevante Erinnerungen:");
+            console.log("─".repeat(50));
+            for (const r of results) {
+                const tags = r.memory.tags.length > 0 ? ` [${r.memory.tags.join(", ")}]` : "";
+                console.log(`  [${(r.score * 100).toFixed(0)}%] ${truncate(r.memory.content, 120)}${tags}`);
+            }
+            console.log("─".repeat(50));
+            console.log("");
+        } catch {
+            if (options.format === "json") {
+                console.log(JSON.stringify({ success: false, error: "recall failed" }));
+            }
+        }
+    });
+
+brainCommand
+    .command("auto-remember <content>")
+    .description("Automatically store a learning/insight (for hook integration after task completion)")
+    .option("-a, --agent <id>", "Agent ID", DEFAULT_AGENT)
+    .option("--agent-type <type>", `Agent type for database selection (${AGENT_TYPES.join(", ")})`)
+    .option("--task-id <id>", "Associated task ID")
+    .option("-t, --tags <tags>", "Comma-separated tags", "auto-learning")
+    .option("--source <source>", "Source of learning (task, conversation, tool)", "task")
+    .option("--json", "Output as JSON")
+    .action(async (content, options) => {
+        try {
+            if (content.length < 20) {
+                if (options.json) {
+                    console.log(JSON.stringify({ success: false, error: "Content too short" }));
+                }
+                return;
+            }
+
+            const brain = createBrain(options.agent, options.agentType);
+            const tags = options.tags.split(",").map((t: string) => t.trim());
+            
+            if (options.source && !tags.includes(options.source)) {
+                tags.push(options.source);
+            }
+            if (options.taskId) {
+                tags.push(`task:${options.taskId}`);
+            }
+
+            const id = await brain.remember(content, tags, {
+                source: options.source,
+                taskId: options.taskId,
+                autoGenerated: true,
+                timestamp: new Date().toISOString(),
+            }, 'private', false);
+
+            if (options.json) {
+                console.log(JSON.stringify({ success: true, id, tags }));
+            } else {
+                console.log(`  ✓ Auto-Remember: ${id.slice(0, 8)}... [${tags.join(", ")}]`);
+            }
+        } catch {
+            if (options.json) {
+                console.log(JSON.stringify({ success: false, error: "remember failed" }));
+            }
+        }
+    });
+
+// ============================================================================
 // Knowledge Base Commands
 // ============================================================================
 
