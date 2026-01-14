@@ -357,4 +357,50 @@ gotessCommand
         }
     });
 
+gotessCommand
+    .command("upload <file>")
+    .description("Upload invoice PDF to Gotess")
+    .option("-s, --sender <name>", "Sender/vendor name (required)")
+    .option("-a, --amount <amount>", "Invoice amount", parseFloat)
+    .option("-d, --date <date>", "Invoice date (YYYY-MM-DD)")
+    .option("--link <transactionId>", "Auto-link to transaction after upload")
+    .action(async (file, options) => {
+        try {
+            if (!options.sender) {
+                console.error("✗ Sender name is required (-s, --sender)");
+                process.exit(1);
+            }
+
+            const client = GotessClient.fromConfig();
+
+            console.log(`\n  📤 Uploading ${file}...`);
+
+            const invoice = await client.uploadInvoicePdf(file, {
+                senderName: options.sender,
+                amount: options.amount,
+                invoiceDate: options.date,
+            });
+
+            console.log(`  ✓ Invoice created: ${invoice.id}`);
+            console.log(`    Filename: ${invoice.filename}`);
+            console.log(`    Sender:   ${invoice.sender_name}`);
+            if (invoice.amount) {
+                console.log(`    Amount:   ${invoice.amount.toFixed(2)} EUR`);
+            }
+
+            // Auto-link if transaction ID provided
+            if (options.link) {
+                console.log(`\n  🔗 Linking to transaction ${options.link}...`);
+                await client.linkInvoice(options.link, invoice.id);
+                console.log(`  ✓ Linked successfully`);
+            }
+
+            console.log("");
+
+        } catch (error) {
+            console.error("Error:", (error as Error).message);
+            process.exit(1);
+        }
+    });
+
 export default gotessCommand;

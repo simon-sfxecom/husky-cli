@@ -1,6 +1,6 @@
 {
   "name": "@simonfestl/husky-cli",
-  "version": "1.24.0",
+  "version": "1.25.0",
   "description": "CLI for Huskyv0 Task Orchestration with Claude Agent SDK",
   "type": "module",
   "bin": {
@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-code": "^1.0.0",
+    "@google-cloud/storage": "^7.14.0",
     "@google-cloud/vertexai": "^1.10.0",
     "@google/generative-ai": "^0.24.1",
     "@inquirer/prompts": "^8.1.0",

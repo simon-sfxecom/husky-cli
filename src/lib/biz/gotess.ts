@@ -223,6 +223,46 @@ export class GotessClient {
         if (!res.ok) throw new Error('Failed to mark proofless');
     }
 
+    /**
+     * Create an invoice record in Gotess
+     * Used for auto-upload from invoice extraction
+     */
+    async createInvoice(invoice: {
+        invoiceDate?: string;
+        amount?: number;
+        senderName: string;
+        filename: string;
+        gcsUri?: string;
+        s3Uri?: string;
+        bookId?: string;
+    }): Promise<GotessInvoice> {
+        const bid = invoice.bookId || this.bookId;
+        if (!bid) throw new Error('Book ID required');
+
+        const body = {
+            invoice_date: invoice.invoiceDate,
+            amount: invoice.amount,
+            sender_name: invoice.senderName,
+            filename: invoice.filename,
+            s3_uri: invoice.s3Uri || invoice.gcsUri, // Use GCS URI as s3_uri field
+            book_id: bid,
+        };
+
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/Invoices`, {
+            method: 'POST',
+            headers: { ...this.headers, 'Prefer': 'return=representation' },
+            body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || 'Failed to create invoice');
+        }
+
+        const data = await res.json();
+        return Array.isArray(data) ? data[0] : data;
+    }
+
     async autoMatch(bookId?: string): Promise<{
         matched: Array<{ transaction: GotessTransaction; invoice: GotessInvoice }>;
         unmatched: GotessTransaction[];
@@ -294,6 +334,86 @@ export class GotessClient {
 
     getBookId(): string | undefined {
         return this.bookId;
+    }
+
+    /**
+     * Upload a PDF file to Supabase Storage and create invoice record
+     * This uploads directly to Gotess's storage system
+     */
+    async uploadInvoicePdf(
+        filePath: string,
+        options: {
+            invoiceDate?: string;
+            amount?: number;
+            senderName: string;
+            bookId?: string;
+        }
+    ): Promise<GotessInvoice> {
+        const bid = options.bookId || this.bookId;
+        if (!bid) throw new Error('Book ID required');
+
+        // Read file
+        const fs = await import('fs');
+        const path = await import('path');
+
+        if (!fs.existsSync(filePath)) {
+            throw new Error(`File not found: ${filePath}`);
+        }
+
+        const fileBuffer = fs.readFileSync(filePath);
+        const filename = path.basename(filePath);
+
+        // Generate unique storage path
+        const timestamp = Date.now();
+        const storagePath = `invoices/${bid}/${timestamp}-${filename}`;
+
+        // Upload to Supabase Storage
+        const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/invoices/${storagePath}`, {
+            method: 'POST',
+            headers: {
+                ...this.headers,
+                'Content-Type': 'application/pdf',
+            },
+            body: fileBuffer,
+        });
+
+        if (!uploadRes.ok) {
+            const err = await uploadRes.json().catch(() => ({}));
+            throw new Error(err.message || `Upload failed: ${uploadRes.status}`);
+        }
+
+        // Get the public URL
+        const s3Uri = `${SUPABASE_URL}/storage/v1/object/public/invoices/${storagePath}`;
+
+        // Create invoice record
+        const invoice = await this.createInvoice({
+            invoiceDate: options.invoiceDate,
+            amount: options.amount,
+            senderName: options.senderName,
+            filename,
+            s3Uri,
+            bookId: bid,
+        });
+
+        return invoice;
+    }
+
+    /**
+     * Get signed URL for private file access
+     */
+    async getSignedUrl(storagePath: string, expiresIn: number = 3600): Promise<string> {
+        const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/invoices/${storagePath}`, {
+            method: 'POST',
+            headers: this.headers,
+            body: JSON.stringify({ expiresIn }),
+        });
+
+        if (!res.ok) {
+            throw new Error('Failed to generate signed URL');
+        }
+
+        const data = await res.json();
+        return `${SUPABASE_URL}/storage/v1${data.signedURL}`;
     }
 }
 

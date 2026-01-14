@@ -62,6 +62,7 @@ interface Config {
   wattizPassword?: string;
   wattizBaseUrl?: string;
   wattizLanguage?: string;
+  gcsBucket?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)

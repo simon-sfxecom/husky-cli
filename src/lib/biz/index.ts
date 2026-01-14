@@ -13,3 +13,4 @@ export type { EmbeddingConfig, EmbeddingResult } from './embeddings.js';
 export * from './billbee-types.js';
 export * from './zendesk-types.js';
 export * from './seatable-types.js';
+export { GotessClient } from './gotess.js';
