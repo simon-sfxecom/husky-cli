@@ -116,47 +116,58 @@ chatCommand
 
 chatCommand
   .command("send <message>")
-  .description("Send a message as supervisor")
+  .description("Send a message (to Google Chat if --space provided, otherwise to dashboard chat)")
   .option("--task-id <id>", "Link to a specific task")
-  .option("--dm <user>", "Send as direct message to user")
-  .option("--space <name>", "Target Google Chat space (e.g., spaces/ABC123)")
+  .option("--space <id>", "Google Chat space ID (e.g., spaces/ABC123 or DM space)")
+  .option("--thread <name>", "Reply in Google Chat thread")
   .action(async (message: string, options) => {
     const config = getConfig();
-    if (!config.apiUrl) {
+    const huskyApiUrl = getHuskyApiUrl();
+    if (!huskyApiUrl) {
       console.error("Error: API URL not configured.");
       process.exit(1);
     }
 
     try {
-      let endpoint = `${config.apiUrl}/api/chat/supervisor`;
-      let payload: any = {
-        content: message,
-        ...(options.taskId && { taskId: options.taskId }),
-      };
-
-      // If --space is provided, use Google Chat API instead
       if (options.space) {
-        endpoint = `${config.apiUrl}/api/google-chat/send`;
-        payload = {
-          text: message,
-          spaceName: options.space,
-        };
+        const res = await fetch(`${huskyApiUrl}/api/google-chat/send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          },
+          body: JSON.stringify({
+            text: message,
+            spaceName: options.space,
+            threadName: options.thread,
+          }),
+        });
+
+        if (!res.ok) {
+          const error = await res.text();
+          throw new Error(`API error: ${res.status} - ${error}`);
+        }
+
+        console.log("✅ Message sent to Google Chat.");
+      } else {
+        const res = await fetch(`${huskyApiUrl}/api/chat/supervisor`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          },
+          body: JSON.stringify({
+            content: message,
+            taskId: options.taskId,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`API error: ${res.status}`);
+        }
+
+        console.log("Message sent to dashboard chat.");
       }
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      console.log(options.space ? "✅ Message sent to Google Chat." : "Message sent.");
     } catch (error) {
       console.error("Error sending message:", error);
       process.exit(1);
