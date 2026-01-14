@@ -10,7 +10,10 @@ function toDate(value: Date | string): Date {
 }
 
 function createBrain(agentId: string, agentType?: string, options?: { useApi?: boolean; kb?: string }): AgentBrain | ApiBrain {
-    if (options?.useApi || (shouldUseApi() && options?.kb)) {
+    // Use API if:
+    // 1. Explicitly requested via --use-api
+    // 2. shouldUseApi() returns true (no Qdrant configured or session token available)
+    if (options?.useApi || shouldUseApi()) {
         return new ApiBrain({
             agentId,
             agentType: isValidAgentType(agentType) ? agentType : undefined,

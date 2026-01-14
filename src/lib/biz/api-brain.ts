@@ -35,22 +35,47 @@ async function apiRequest<T>(
     options: { method?: string; body?: unknown } = {}
 ): Promise<T> {
     const config = getConfig();
-    if (!config.apiUrl || !config.apiKey) {
-        throw new Error("API not configured. Run: husky config set api-url <url> && husky config set api-key <key>");
+    if (!config.apiUrl) {
+        throw new Error("API not configured. Run: husky config set api-url <url>");
+    }
+
+    // Prefer session token (JWT), fall back to API key for backwards compatibility
+    const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+    };
+
+    if (config.sessionToken) {
+        // Check if session is expired
+        if (config.sessionExpiresAt) {
+            const expiresAt = new Date(config.sessionExpiresAt);
+            if (expiresAt < new Date()) {
+                throw new Error("Session expired. Run: husky auth login --agent <name>");
+            }
+        }
+        headers["Authorization"] = `Bearer ${config.sessionToken}`;
+    } else if (config.apiKey) {
+        // Legacy fallback - will be rejected by new API but kept for error message
+        headers["x-api-key"] = config.apiKey;
+    } else {
+        throw new Error("Not authenticated. Run: husky auth login --agent <name>");
     }
 
     const url = new URL(`/api/brain${path}`, config.apiUrl);
     const res = await fetch(url.toString(), {
         method: options.method || "POST",
-        headers: {
-            "x-api-key": config.apiKey,
-            "Content-Type": "application/json",
-        },
+        headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
     });
 
     if (!res.ok) {
         const error = await res.json().catch(() => ({ error: res.statusText }));
+        if (res.status === 401) {
+            // Check if it's the new API rejecting API key auth
+            if (error.upgrade) {
+                throw new Error("Session required. Run: husky auth login --agent <name>");
+            }
+            throw new Error(error.message || "Authentication failed");
+        }
         if (res.status === 403) {
             throw new Error(`Access denied: ${error.error || 'Permission denied to this resource'}`);
         }
@@ -288,7 +313,14 @@ export class ApiBrain {
 
 export function shouldUseApi(): boolean {
     const config = getConfig();
-    return Boolean(config.apiUrl && config.apiKey);
+    // Use API if:
+    // 1. No Qdrant URL configured (can't use direct access)
+    // 2. Or session token is available (preferred auth method)
+    if (!config.qdrantUrl) {
+        return Boolean(config.apiUrl);
+    }
+    // If Qdrant is configured, still prefer API if session token exists
+    return Boolean(config.apiUrl && config.sessionToken);
 }
 
 export default ApiBrain;
