@@ -118,6 +118,8 @@ chatCommand
   .command("send <message>")
   .description("Send a message as supervisor")
   .option("--task-id <id>", "Link to a specific task")
+  .option("--dm <user>", "Send as direct message to user")
+  .option("--space <name>", "Target Google Chat space (e.g., spaces/ABC123)")
   .action(async (message: string, options) => {
     const config = getConfig();
     if (!config.apiUrl) {
@@ -126,23 +128,35 @@ chatCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/chat/supervisor`, {
+      let endpoint = `${config.apiUrl}/api/chat/supervisor`;
+      let payload: any = {
+        content: message,
+        ...(options.taskId && { taskId: options.taskId }),
+      };
+
+      // If --space is provided, use Google Chat API instead
+      if (options.space) {
+        endpoint = `${config.apiUrl}/api/google-chat/send`;
+        payload = {
+          text: message,
+          spaceName: options.space,
+        };
+      }
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
         },
-        body: JSON.stringify({
-          content: message,
-          taskId: options.taskId,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         throw new Error(`API error: ${res.status}`);
       }
 
-      console.log("Message sent.");
+      console.log(options.space ? "✅ Message sent to Google Chat." : "Message sent.");
     } catch (error) {
       console.error("Error sending message:", error);
       process.exit(1);
