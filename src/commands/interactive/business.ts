@@ -13,12 +13,16 @@ import {
     QdrantClient,
     EmbeddingService
 } from "../../lib/biz/index.js";
+import { requireAnyPermission } from "../../lib/permissions.js";
 
 // ============================================
 // MAIN BUSINESS MENU
 // ============================================
 
 export async function businessMenu(): Promise<void> {
+    // RBAC: Require biz permissions
+    requireAnyPermission(["biz:tickets", "biz:orders", "biz:customers", "biz:*"]);
+
     const menuItems: MenuItem[] = [
         { name: "🎫 Tickets (Zendesk)", value: "tickets" },
         { name: "👤 Customers (Billbee)", value: "customers" },

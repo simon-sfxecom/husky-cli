@@ -7,6 +7,7 @@
 import { select, input, confirm } from "@inquirer/prompts";
 import { MenuItem, pressEnterToContinue, truncate } from "./utils.js";
 import { spawnSync } from "child_process";
+import { requireAnyPermission } from "../../lib/permissions.js";
 
 interface PullRequest {
   number: number;
@@ -188,6 +189,9 @@ async function checkStatus(): Promise<void> {
 }
 
 async function createPR(): Promise<void> {
+  // RBAC: Require PR create permission
+  requireAnyPermission(["pr:create", "pr:*"]);
+
   try {
     const title = await input({
       message: "PR title:",
@@ -232,6 +236,9 @@ async function createPR(): Promise<void> {
 }
 
 async function mergePR(): Promise<void> {
+  // RBAC: Require PR merge permission
+  requireAnyPermission(["pr:merge", "pr:*"]);
+
   try {
     const prNumber = await input({
       message: "PR number to merge:",

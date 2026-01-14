@@ -2,6 +2,7 @@ import { select, input, confirm } from "@inquirer/prompts";
 import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 import { resolveProject } from "../../lib/project-resolver.js";
+import { requirePermission } from "../../lib/permissions.js";
 
 interface Task {
   id: string;
@@ -438,6 +439,9 @@ async function updateTask(config: ValidConfig): Promise<void> {
 }
 
 async function startTask(config: ValidConfig): Promise<void> {
+  // RBAC: Require task:start permission
+  requirePermission("task:start");
+
   try {
     const task = await selectTask(config, "Select task to start:");
     if (!task) return;
@@ -462,6 +466,9 @@ async function startTask(config: ValidConfig): Promise<void> {
 }
 
 async function markTaskDone(config: ValidConfig): Promise<void> {
+  // RBAC: Require task:done permission
+  requirePermission("task:done");
+
   try {
     const task = await selectTask(config, "Select task to mark as done:");
     if (!task) return;

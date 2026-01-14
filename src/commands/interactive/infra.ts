@@ -7,6 +7,7 @@
 import { select, input, confirm } from "@inquirer/prompts";
 import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate, formatDate } from "./utils.js";
+import { requireAnyPermission } from "../../lib/permissions.js";
 
 interface ServiceHealth {
   name: string;
@@ -259,6 +260,9 @@ async function showAlerts(config: ValidConfig): Promise<void> {
 }
 
 async function restartService(config: ValidConfig): Promise<void> {
+  // RBAC: Require infra update permission for destructive operations
+  requireAnyPermission(["infra:update", "infra:*"]);
+
   try {
     const serviceName = await input({
       message: "Service name to restart:",

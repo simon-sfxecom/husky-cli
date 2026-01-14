@@ -1,6 +1,7 @@
 import { select, input, confirm } from "@inquirer/prompts";
 import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
+import { requireAnyPermission } from "../../lib/permissions.js";
 
 interface VMSession {
   id: string;
@@ -148,6 +149,9 @@ async function viewVMSession(config: ValidConfig): Promise<void> {
 }
 
 async function createVMSession(config: ValidConfig): Promise<void> {
+  // RBAC: Require VM create permission
+  requireAnyPermission(["vm:create", "vm:*"]);
+
   try {
     const name = await input({
       message: "Session name:",
@@ -205,6 +209,9 @@ async function createVMSession(config: ValidConfig): Promise<void> {
 }
 
 async function startVM(config: ValidConfig): Promise<void> {
+  // RBAC: Require VM manage permission
+  requireAnyPermission(["vm:manage", "vm:*"]);
+
   try {
     const session = await selectVMSession(config, "Select session to start:");
     if (!session) return;
@@ -231,6 +238,9 @@ async function startVM(config: ValidConfig): Promise<void> {
 }
 
 async function stopVM(config: ValidConfig): Promise<void> {
+  // RBAC: Require VM manage permission
+  requireAnyPermission(["vm:manage", "vm:*"]);
+
   try {
     const session = await selectVMSession(config, "Select session to stop:");
     if (!session) return;
@@ -327,6 +337,9 @@ async function approvePlan(config: ValidConfig): Promise<void> {
 }
 
 async function deleteVMSession(config: ValidConfig): Promise<void> {
+  // RBAC: Require VM manage permission
+  requireAnyPermission(["vm:manage", "vm:*"]);
+
   try {
     const session = await selectVMSession(config, "Select session to delete:");
     if (!session) return;
