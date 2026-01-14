@@ -7,6 +7,7 @@ import {
   hasPermission,
   canAccessKnowledgeBase 
 } from "../lib/permissions-cache.js";
+import { apiRequest as hybridApiRequest } from "../lib/api-client.js";
 
 interface SessionAgent {
   id: string;
@@ -237,12 +238,13 @@ authCommand
   .option("--json", "Output as JSON")
   .action(async (options) => {
     try {
-      const data = await apiRequest<{
+      const data = await hybridApiRequest<{
         role: string;
         permissions: string[];
         scopes?: string[];
-        keyId: string;
+        keyId?: string;
         source: string;
+        agent?: string;
       }>("/api/auth/whoami");
 
       if (options.json) {
@@ -253,7 +255,12 @@ authCommand
       console.log("\n🔐 Authentication Info");
       console.log("─".repeat(40));
       console.log(`Role:       ${data.role}`);
-      console.log(`Key ID:     ${data.keyId}`);
+      if (data.keyId) {
+        console.log(`Key ID:     ${data.keyId}`);
+      }
+      if (data.agent) {
+        console.log(`Agent:      ${data.agent}`);
+      }
       console.log(`Source:     ${data.source}`);
       if (data.scopes && data.scopes.length > 0) {
         console.log(`Scopes:     ${data.scopes.join(", ")}`);

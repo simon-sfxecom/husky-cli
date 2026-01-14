@@ -96,16 +96,22 @@ async function getAuthHeader(
   session: ReturnType<typeof getSessionConfig>,
   apiKey: string | undefined
 ): Promise<Record<string, string>> {
+  // DEBUG: console.log('DEBUG session:', session?.token ? 'exists' : 'missing', session?.expiresAt);
+  
   if (session?.token && session.expiresAt) {
+    // DEBUG: console.log('DEBUG: Checking expiration...');
     if (isSessionExpired(session.expiresAt)) {
+      // DEBUG: console.log('DEBUG: Session expired, refreshing...');
       if (session.agent) {
         const newSession = await refreshSession(session.agent);
         if (newSession) {
+          // DEBUG: console.log('DEBUG: Refresh successful, using Bearer token');
           return { "Authorization": `Bearer ${newSession.token}` };
         }
       }
       clearSessionConfig();
       if (apiKey) {
+        // DEBUG: console.log('DEBUG: Refresh failed, falling back to API key');
         return { "x-api-key": apiKey };
       }
       throw new Error("Session expired and no API key available for refresh");
@@ -114,10 +120,12 @@ async function getAuthHeader(
     if (isSessionExpiringSoon(session.expiresAt) && session.agent) {
       refreshSession(session.agent).catch(() => {});
     }
+    // DEBUG: console.log('DEBUG: Using existing Bearer token');
     return { "Authorization": `Bearer ${session.token}` };
   }
   
   if (apiKey) {
+    // DEBUG: console.log('DEBUG: No session, using API key');
     return { "x-api-key": apiKey };
   }
   
