@@ -39,6 +39,7 @@ import { youtubeCommand } from "./commands/youtube.js";
 import { imageCommand } from "./commands/image.js";
 import { authCommand } from "./commands/auth.js";
 import { businessCommand } from "./commands/business.js";
+import { planCommand } from "./commands/plan.js";
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -86,6 +87,7 @@ program.addCommand(youtubeCommand);
 program.addCommand(imageCommand);
 program.addCommand(authCommand);
 program.addCommand(businessCommand);
+program.addCommand(planCommand);
 
 // Handle --llm flag specially
 if (process.argv.includes("--llm")) {

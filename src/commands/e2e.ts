@@ -19,7 +19,7 @@ export const e2eCommand = new Command("e2e")
   .description("E2E testing and browser automation (E2E Agent)");
 
 // GCS bucket for E2E artifacts
-const GCS_BUCKET = "husky-files-tigerv0";
+const GCS_BUCKET = "husky-e2e-artifacts";
 
 // Helper: Ensure API is configured
 function ensureConfig() {
