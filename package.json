@@ -1,6 +1,6 @@
 {
   "name": "@simonfestl/husky-cli",
-  "version": "1.25.4",
+  "version": "1.26.0",
   "description": "CLI for Huskyv0 Task Orchestration with Claude Agent SDK",
   "type": "module",
   "bin": {
@@ -25,6 +25,7 @@
     "@google/generative-ai": "^0.24.1",
     "@inquirer/prompts": "^8.1.0",
     "@types/uuid": "^10.0.0",
+    "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "firebase-admin": "^13.6.0",
     "playwright": "^1.57.0",

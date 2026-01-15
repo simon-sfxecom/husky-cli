@@ -1,13 +1,13 @@
 import { Command } from "commander";
 import { getConfig, setSessionConfig, clearSessionConfig, getSessionConfig, fetchAndCacheRole } from "./config.js";
-import { 
-  getPermissions, 
-  clearPermissionsCache, 
+import {
+  getPermissions,
+  clearPermissionsCache,
   getCacheStatus,
   hasPermission,
-  canAccessKnowledgeBase 
+  canAccessKnowledgeBase
 } from "../lib/permissions-cache.js";
-import { apiRequest as hybridApiRequest } from "../lib/api-client.js";
+import { getApiClient } from "../lib/api-client.js";
 
 interface SessionAgent {
   id: string;
@@ -53,55 +53,6 @@ interface CreateApiKeyResponse {
   warning: string;
 }
 
-/**
- * Sanitize error messages to prevent sensitive data leakage.
- * Truncates long messages and removes potential secrets.
- */
-function sanitizeErrorMessage(message: string, maxLength = 200): string {
-  if (!message) return "Unknown error";
-
-  // Remove potential secrets (patterns like API keys, tokens, etc.)
-  let sanitized = message
-    .replace(/[a-zA-Z0-9_-]{32,}/g, "[REDACTED]") // Long alphanumeric strings
-    .replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]") // Bearer tokens
-    .replace(/key[=:]\s*[^\s,}]+/gi, "key=[REDACTED]"); // key=value patterns
-
-  // Truncate if too long
-  if (sanitized.length > maxLength) {
-    sanitized = sanitized.substring(0, maxLength) + "...";
-  }
-
-  return sanitized;
-}
-
-async function apiRequest<T>(
-  path: string,
-  options: { method?: string; body?: unknown } = {}
-): Promise<T> {
-  const config = getConfig();
-  if (!config.apiUrl || !config.apiKey) {
-    throw new Error("API not configured. Run: husky config set api-url <url> && husky config set api-key <key>");
-  }
-
-  const url = new URL(path, config.apiUrl);
-  const res = await fetch(url.toString(), {
-    method: options.method || "GET",
-    headers: {
-      "x-api-key": config.apiKey,
-      "Content-Type": "application/json",
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: res.statusText }));
-    const rawMessage = error.message || error.error || `HTTP ${res.status}`;
-    throw new Error(sanitizeErrorMessage(rawMessage));
-  }
-
-  return res.json();
-}
-
 export const authCommand = new Command("auth")
   .description("Manage API keys and authentication");
 
@@ -112,8 +63,9 @@ authCommand
   .option("--json", "Output as JSON")
   .action(async (options) => {
     try {
+      const api = getApiClient();
       const query = options.includeRevoked ? "?includeRevoked=true" : "";
-      const data = await apiRequest<{ keys: ApiKeyListItem[] }>(`/api/auth/keys${query}`);
+      const data = await api.get<{ keys: ApiKeyListItem[] }>(`/api/auth/keys${query}`);
 
       if (options.json) {
         console.log(JSON.stringify(data.keys, null, 2));
@@ -177,10 +129,8 @@ authCommand
         body.expiresInDays = days;
       }
 
-      const result = await apiRequest<CreateApiKeyResponse>("/api/auth/keys", {
-        method: "POST",
-        body,
-      });
+      const api = getApiClient();
+      const result = await api.post<CreateApiKeyResponse>("/api/auth/keys", body);
 
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
@@ -214,9 +164,9 @@ authCommand
   .option("--json", "Output as JSON")
   .action(async (id, options) => {
     try {
-      const result = await apiRequest<{ success: boolean; id: string; keyPrefix: string; revokedAt: string }>(
-        `/api/auth/keys/${id}`,
-        { method: "DELETE" }
+      const api = getApiClient();
+      const result = await api.delete<{ success: boolean; id: string; keyPrefix: string; revokedAt: string }>(
+        `/api/auth/keys/${id}`
       );
 
       if (options.json) {
@@ -238,7 +188,8 @@ authCommand
   .option("--json", "Output as JSON")
   .action(async (options) => {
     try {
-      const data = await hybridApiRequest<{
+      const api = getApiClient();
+      const data = await api.get<{
         role: string;
         permissions: string[];
         scopes?: string[];

@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "f
 import { join } from "path";
 import { homedir } from "os";
 import { ErrorHelpers, errorWithHint, ExplainTopic } from "../lib/error-hints.js";
+import { getApiClient } from "../lib/api-client.js";
 
 // Valid agent roles - used for runtime validation
 const VALID_ROLES = ["admin", "supervisor", "worker", "reviewer", "e2e_agent", "pr_agent", "support", "devops", "purchasing", "ops"] as const;
@@ -178,20 +179,14 @@ export async function fetchAndCacheRole(): Promise<{ role?: AgentRole; permissio
   }
 
   try {
-    const url = new URL("/api/auth/whoami", config.apiUrl);
-    const res = await fetch(url.toString(), {
-      headers: { "x-api-key": config.apiKey },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      // Update config cache
-      config.role = data.role;
-      config.permissions = data.permissions;
-      config.roleLastChecked = new Date().toISOString();
-      saveConfig(config);
-      return { role: data.role, permissions: data.permissions };
-    }
+    const api = getApiClient();
+    const data = await api.get<{ role?: AgentRole; permissions?: string[] }>("/api/auth/whoami");
+    // Update config cache
+    config.role = data.role;
+    config.permissions = data.permissions;
+    config.roleLastChecked = new Date().toISOString();
+    saveConfig(config);
+    return { role: data.role, permissions: data.permissions };
   } catch {
     // Ignore fetch errors, return cached or empty
   }
@@ -572,32 +567,10 @@ configCommand
     console.log("Testing API connection...");
 
     try {
-      // First test basic connectivity with /api/tasks
-      const tasksUrl = new URL("/api/tasks", config.apiUrl);
-      const apiKey = config.apiKey!; // We already checked it's defined above
-      const tasksRes = await fetch(tasksUrl.toString(), {
-        headers: { "x-api-key": apiKey },
-      });
+      const api = getApiClient();
 
-      if (!tasksRes.ok) {
-        if (tasksRes.status === 401) {
-          console.error(`API connection failed: Unauthorized (HTTP 401)`);
-          console.error("  Check your API key with: husky config set api-key <key>");
-          console.error("\n💡 For configuration help: husky explain config");
-          process.exit(1);
-        } else if (tasksRes.status === 403) {
-          console.error(`API connection failed: Forbidden (HTTP 403)`);
-          console.error("  Your API key may not have the required permissions");
-          console.error("\n💡 For configuration help: husky explain config");
-          process.exit(1);
-        } else {
-          errorWithHint(
-            `API connection failed: HTTP ${tasksRes.status}`,
-            ExplainTopic.CONFIG,
-            "Check your API configuration"
-          );
-        }
-      }
+      // First test basic connectivity with /api/tasks
+      await api.get("/api/tasks");
 
       console.log(`API connection successful (API URL: ${config.apiUrl})`);
 
@@ -613,13 +586,8 @@ configCommand
         console.log(`\n  Use 'husky auth permissions' to see full permissions.`);
       } else {
         // No session - fetch API key role from whoami
-        const whoamiUrl = new URL("/api/auth/whoami", config.apiUrl);
-        const whoamiRes = await fetch(whoamiUrl.toString(), {
-          headers: { "x-api-key": apiKey },
-        });
-
-        if (whoamiRes.ok) {
-          const data = await whoamiRes.json();
+        try {
+          const data = await api.get<{ role?: AgentRole; permissions?: string[]; agentId?: string }>("/api/auth/whoami");
           // Cache the role/permissions (only if no session)
           const updatedConfig = getConfig();
           updatedConfig.role = data.role;
@@ -635,16 +603,29 @@ configCommand
           if (data.agentId) {
             console.log(`  Agent ID: ${data.agentId}`);
           }
+        } catch {
+          // whoami failed, but tasks worked - connection is fine
         }
       }
     } catch (error) {
-      if (error instanceof TypeError && error.message.includes("fetch")) {
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      if (errorMsg.includes("401")) {
+        console.error(`API connection failed: Unauthorized (HTTP 401)`);
+        console.error("  Check your API key with: husky config set api-key <key>");
+        console.error("\n  For configuration help: husky explain config");
+        process.exit(1);
+      } else if (errorMsg.includes("403")) {
+        console.error(`API connection failed: Forbidden (HTTP 403)`);
+        console.error("  Your API key may not have the required permissions");
+        console.error("\n  For configuration help: husky explain config");
+        process.exit(1);
+      } else if (error instanceof TypeError && errorMsg.includes("fetch")) {
         console.error(`API connection failed: Could not connect to ${config.apiUrl}`);
         console.error("  Check your API URL with: husky config set api-url <url>");
-        console.error("\n💡 For configuration help: husky explain config");
+        console.error("\n  For configuration help: husky explain config");
       } else {
-        console.error(`API connection failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-        console.error("\n💡 For configuration help: husky explain config");
+        console.error(`API connection failed: ${errorMsg}`);
+        console.error("\n  For configuration help: husky explain config");
       }
       process.exit(1);
     }

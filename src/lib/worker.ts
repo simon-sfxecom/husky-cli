@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { getApiClient } from "./api-client.js";
 
 interface WorkerIdentity {
   workerId: string;
@@ -60,71 +61,65 @@ export function generateSessionId(): string {
 }
 
 // Register or update worker with API, return workerId
+// Note: apiUrl and apiKey parameters kept for backwards compatibility but not used
 export async function ensureWorkerRegistered(
-  apiUrl: string,
-  apiKey: string
+  _apiUrl?: string,
+  _apiKey?: string
 ): Promise<string> {
   const identity = getWorkerIdentity();
+  const api = getApiClient();
 
-  // Try to get existing worker
-  const getRes = await fetch(`${apiUrl}/api/workers/${identity.workerId}`, {
-    headers: { "x-api-key": apiKey },
-  });
-
-  if (getRes.ok) {
+  try {
+    // Try to get existing worker
+    await api.get(`/api/workers/${identity.workerId}`);
     // Worker exists, just return the ID
     return identity.workerId;
-  }
-
-  if (getRes.status === 404) {
-    // Register new worker
-    const registerRes = await fetch(`${apiUrl}/api/workers`, {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: identity.workerName,
-        type: "claude-code",
-        hostname: identity.hostname,
-        username: identity.username,
-        platform: identity.platform,
-        agentVersion: identity.agentVersion,
-      }),
-    });
-
-    if (!registerRes.ok) {
-      console.error(`Warning: Failed to register worker: ${registerRes.status}`);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "";
+    if (!errorMsg.includes("404")) {
+      // Unexpected error, return local ID
       return identity.workerId;
     }
+  }
 
-    const worker = await registerRes.json();
+  // Worker not found (404), register new worker
+  try {
+    const worker = await api.post<{ id: string }>("/api/workers", {
+      name: identity.workerName,
+      type: "claude-code",
+      hostname: identity.hostname,
+      username: identity.username,
+      platform: identity.platform,
+      agentVersion: identity.agentVersion,
+    });
 
     // Update local config with server-assigned ID if different
     if (worker.id !== identity.workerId) {
       setConfig("workerId", worker.id);
       return worker.id;
     }
+  } catch {
+    console.error("Warning: Failed to register worker");
   }
 
   return identity.workerId;
 }
 
 // Register a new session with API
+// Note: apiUrl and apiKey parameters kept for backwards compatibility but not used
 export async function registerSession(
-  apiUrl: string,
-  apiKey: string,
+  _apiUrl: string,
+  _apiKey: string,
   workerId: string,
   sessionId: string
 ): Promise<void> {
   try {
-    await fetch(`${apiUrl}/api/workers/sessions`, {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: sessionId,
-        workerId,
-        pid: process.pid,
-        workingDirectory: process.cwd(),
-      }),
+    const api = getApiClient();
+    await api.post("/api/workers/sessions", {
+      id: sessionId,
+      workerId,
+      pid: process.pid,
+      workingDirectory: process.cwd(),
     });
   } catch {
     // Silently fail - session registration is optional
@@ -132,18 +127,16 @@ export async function registerSession(
 }
 
 // Send session heartbeat
+// Note: apiUrl and apiKey parameters kept for backwards compatibility but not used
 export async function sessionHeartbeat(
-  apiUrl: string,
-  apiKey: string,
+  _apiUrl: string,
+  _apiKey: string,
   sessionId: string,
   currentTaskId?: string | null
 ): Promise<void> {
   try {
-    await fetch(`${apiUrl}/api/workers/sessions/${sessionId}/heartbeat`, {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ currentTaskId }),
-    });
+    const api = getApiClient();
+    await api.post(`/api/workers/sessions/${sessionId}/heartbeat`, { currentTaskId });
   } catch {
     // Silently fail
   }

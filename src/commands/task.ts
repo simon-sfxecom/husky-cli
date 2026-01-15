@@ -10,6 +10,7 @@ import { resolveProject, fetchProjects, formatProjectList, type ResolveResult } 
 import { requirePermission } from "../lib/permissions.js";
 import { ErrorHelpers, errorWithHint, errorWithAutoHint, ExplainTopic } from "../lib/error-hints.js";
 import { AgentLock, AgentLockError, checkWorktreeConflict } from "../lib/agent-lock.js";
+import { getApiClient } from "../lib/api-client.js";
 
 export const taskCommand = new Command("task")
   .description("Manage tasks");
@@ -96,21 +97,18 @@ function createWorktreeForTask(taskId: string): { path: string; branch: string }
 }
 
 // Helper: Find project ID by GitHub repo identifier
-async function findProjectByRepo(apiUrl: string, apiKey: string | undefined, repoIdentifier: string): Promise<{ id: string; name: string } | null> {
+async function findProjectByRepo(repoIdentifier: string): Promise<{ id: string; name: string } | null> {
   try {
-    const res = await fetch(`${apiUrl}/api/projects`, {
-      headers: apiKey ? { "x-api-key": apiKey } : {},
-    });
-    if (!res.ok) return null;
+    const api = getApiClient();
+    const projects = await api.get<Array<{ id: string; name: string; githubRepo?: string }>>("/api/projects");
 
-    const projects = await res.json();
     // Extract repo name (e.g., "huskyv0" from "simon-sfxecom/huskyv0")
     const repoName = repoIdentifier.split("/").pop()?.toLowerCase() || "";
 
     // Try to match by:
     // 1. githubRepo field (exact or partial match)
     // 2. Project name similarity to repo name
-    const project = projects.find((p: { githubRepo?: string; name: string }) => {
+    const project = projects.find((p) => {
       // Check githubRepo field first
       if (p.githubRepo?.toLowerCase().includes(repoIdentifier.toLowerCase())) {
         return true;
@@ -155,8 +153,8 @@ taskCommand
 
       if (!options.all && !options.project) {
         const repoIdentifier = getGitRepoIdentifier();
-        if (repoIdentifier && config.apiUrl) {
-          autoDetectedProject = await findProjectByRepo(config.apiUrl, config.apiKey, repoIdentifier);
+        if (repoIdentifier) {
+          autoDetectedProject = await findProjectByRepo(repoIdentifier);
           if (autoDetectedProject) {
             filterProjectId = autoDetectedProject.id;
           }
@@ -167,15 +165,8 @@ taskCommand
 
       // Note: We don't pass projectId to API to avoid Firestore index requirement
       // Instead, we filter client-side which is fine for reasonable task counts
-      const res = await fetch(url.toString(), {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
-      });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      let tasks: Task[] = await res.json();
+      const api = getApiClient();
+      let tasks: Task[] = await api.get<Task[]>(url.pathname + url.search);
 
       // Client-side filtering by projectId (avoids Firestore composite index)
       if (filterProjectId) {
@@ -292,29 +283,17 @@ taskCommand
         }
       }
 
-      const res = await fetch(`${config.apiUrl}/api/tasks/${id}/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          agent: "claude-code",
-          workerId,
-          sessionId,
-          // Include worktree info if created
-          ...(worktreeInfo ? {
-            worktreePath: worktreeInfo.path,
-            worktreeBranch: worktreeInfo.branch,
-          } : {}),
-        }),
+      const api = getApiClient();
+      const task = await api.post<{ title: string }>(`/api/tasks/${id}/start`, {
+        agent: "claude-code",
+        workerId,
+        sessionId,
+        // Include worktree info if created
+        ...(worktreeInfo ? {
+          worktreePath: worktreeInfo.path,
+          worktreeBranch: worktreeInfo.branch,
+        } : {}),
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      const task = await res.json();
       console.log(`✓ Started: ${task.title}`);
       console.log(`  Worker: ${workerId}`);
       console.log(`  Session: ${sessionId}`);
@@ -348,23 +327,11 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${id}/done`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          prUrl: options.pr,
-          skipQA: options.skipQa === true,
-        }),
+      const api = getApiClient();
+      const task = await api.post<{ title: string; qaTriggered?: boolean; message?: string }>(`/api/tasks/${id}/done`, {
+        prUrl: options.pr,
+        skipQA: options.skipQa === true,
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      const task = await res.json();
 
       if (task.qaTriggered) {
         console.log(`✓ Task moved to review: ${task.title}`);
@@ -430,25 +397,12 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${id}/assign`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          targetHostname: options.worker,
-          priority: options.priority,
-          instructions: options.instructions,
-        }),
+      const api = getApiClient();
+      const result = await api.post(`/api/tasks/${id}/assign`, {
+        targetHostname: options.worker,
+        priority: options.priority,
+        instructions: options.instructions,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `API error: ${res.status}`);
-      }
-
-      const result = await res.json();
 
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
@@ -514,27 +468,14 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          title,
-          description: options.description,
-          projectId: resolvedProjectId,
-          linkedPath: options.path,
-          priority: options.priority,
-        }),
+      const api = getApiClient();
+      const task = await api.post<{ id: string; title: string }>("/api/tasks", {
+        title,
+        description: options.description,
+        projectId: resolvedProjectId,
+        linkedPath: options.path,
+        priority: options.priority,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || `API error: ${res.status}`);
-      }
-
-      const task = await res.json();
       console.log(`✓ Created: #${task.id} ${task.title}`);
     } catch (error) {
       console.error("Error creating task:", error);
@@ -611,25 +552,8 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify(updates),
-      });
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          console.error(`Error: Task ${id} not found`);
-        } else {
-          console.error(`Error: API returned ${res.status}`);
-        }
-        process.exit(1);
-      }
-
-      const task = await res.json();
+      const api = getApiClient();
+      const task = await api.patch<{ title: string }>(`/api/tasks/${id}`, updates);
 
       if (options.json) {
         console.log(JSON.stringify(task, null, 2));
@@ -659,24 +583,13 @@ taskCommand
   .action(async (id, options) => {
     const config = ensureConfig();
 
+    const api = getApiClient();
+
     // Confirm deletion unless --force is provided
     if (!options.force) {
       // First fetch task details to show what will be deleted
       try {
-        const getRes = await fetch(`${config.apiUrl}/api/tasks/${id}`, {
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
-        });
-
-        if (!getRes.ok) {
-          if (getRes.status === 404) {
-            console.error(`Error: Task ${id} not found`);
-          } else {
-            console.error(`Error: API returned ${getRes.status}`);
-          }
-          process.exit(1);
-        }
-
-        const task = await getRes.json();
+        const task = await api.get<{ title: string }>(`/api/tasks/${id}`);
         const confirmed = await confirm(`Delete task "${task.title}" (${id})?`);
 
         if (!confirmed) {
@@ -690,19 +603,7 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${id}`, {
-        method: "DELETE",
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
-      });
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          console.error(`Error: Task ${id} not found`);
-        } else {
-          console.error(`Error: API returned ${res.status}`);
-        }
-        process.exit(1);
-      }
+      await api.delete(`/api/tasks/${id}`);
 
       if (options.json) {
         console.log(JSON.stringify({ deleted: true, id }, null, 2));
@@ -736,20 +637,8 @@ taskCommand
     const taskId = getTaskId(options);
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
-      });
-
-      if (!res.ok) {
-        if (res.status === 404) {
-          console.error(`Error: Task ${taskId} not found`);
-        } else {
-          console.error(`Error: API returned ${res.status}`);
-        }
-        process.exit(1);
-      }
-
-      const task = await res.json();
+      const api = getApiClient();
+      const task = await api.get<{ id: string; title: string; status: string; priority: string; description?: string; agent?: string; projectId?: string }>(`/api/tasks/${taskId}`);
 
       if (options.json) {
         console.log(JSON.stringify(task, null, 2));
@@ -780,21 +669,11 @@ taskCommand
     const taskId = getTaskId(options);
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/status`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          message,
-          timestamp: new Date().toISOString(),
-        }),
+      const api = getApiClient();
+      await api.post(`/api/tasks/${taskId}/status`, {
+        message,
+        timestamp: new Date().toISOString(),
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
 
       console.log(`✓ Status updated: ${message}`);
     } catch (error) {
@@ -832,21 +711,11 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/status`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          message,
-          timestamp: new Date().toISOString(),
-        }),
+      const api = getApiClient();
+      await api.post(`/api/tasks/${taskId}/status`, {
+        message,
+        timestamp: new Date().toISOString(),
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
 
       console.log("✓ Status message posted");
     } catch (error) {
@@ -898,22 +767,12 @@ taskCommand
     const steps = options.steps ? options.steps.split(",").map((s: string) => s.trim()) : undefined;
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/plan`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          summary: summary || "Execution plan",
-          steps,
-          content,
-        }),
+      const api = getApiClient();
+      await api.post(`/api/tasks/${taskId}/plan`, {
+        summary: summary || "Execution plan",
+        steps,
+        content,
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
 
       console.log(`✓ Plan submitted for task ${taskId}`);
       console.log("  Waiting for approval...");
@@ -937,18 +796,11 @@ taskCommand
     const startTime = Date.now();
 
     console.log(`Waiting for approval on task ${taskId}...`);
+    const api = getApiClient();
 
     while (Date.now() - startTime < timeout) {
       try {
-        const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/approval`, {
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
-        });
-
-        if (!res.ok) {
-          throw new Error(`API error: ${res.status}`);
-        }
-
-        const data = await res.json();
+        const data = await api.get<{ approved?: boolean; pending?: boolean; rejected?: boolean; reason?: string }>(`/api/tasks/${taskId}/approval`);
 
         if (data.approved === true && data.pending === false) {
           console.log("✓ Plan approved!");
@@ -985,22 +837,12 @@ taskCommand
     const taskId = getTaskId(options);
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/complete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          output: options.output,
-          prUrl: options.pr,
-          error: options.error,
-        }),
+      const api = getApiClient();
+      await api.post(`/api/tasks/${taskId}/complete`, {
+        output: options.output,
+        prUrl: options.pr,
+        error: options.error,
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
 
       if (options.error) {
         console.log(`✗ Task ${taskId} marked as failed`);
@@ -1032,23 +874,11 @@ taskCommand
     const taskId = getTaskId(options);
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          maxIterations: parseInt(options.maxIterations, 10),
-          autoFix: options.autoFix !== false,
-        }),
+      const api = getApiClient();
+      const data = await api.post<{ maxIterations: number; qaStatus: string }>(`/api/tasks/${taskId}/qa/start`, {
+        maxIterations: parseInt(options.maxIterations, 10),
+        autoFix: options.autoFix !== false,
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      const data = await res.json();
       console.log(`✓ QA validation started for task ${taskId}`);
       console.log(`  Max iterations: ${data.maxIterations}`);
       console.log(`  Status: ${data.qaStatus}`);
@@ -1069,15 +899,8 @@ taskCommand
     const taskId = getTaskId(options);
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/status`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
-      });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      const data = await res.json();
+      const api = getApiClient();
+      const data = await api.get<{ taskTitle: string; qaStatus: string; qaMaxIterations: number; iterations: { total: number; approved: number; rejected: number; errors: number }; latestIssues?: Array<{ type: string; title: string }>; isComplete?: boolean; requiresHumanReview?: boolean }>(`/api/tasks/${taskId}/qa/status`);
 
       if (options.json) {
         console.log(JSON.stringify(data, null, 2));
@@ -1122,21 +945,11 @@ taskCommand
     const taskId = getTaskId(options);
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/approve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          approved: true,
-          notes: options.notes,
-        }),
+      const api = getApiClient();
+      await api.post(`/api/tasks/${taskId}/qa/approve`, {
+        approved: true,
+        notes: options.notes,
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
 
       console.log(`✓ QA manually approved for task ${taskId}`);
     } catch (error) {
@@ -1167,21 +980,11 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/reject`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          notes: options.notes,
-          issues,
-        }),
+      const api = getApiClient();
+      await api.post(`/api/tasks/${taskId}/qa/reject`, {
+        notes: options.notes,
+        issues,
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
 
       console.log(`✗ QA rejected for task ${taskId}`);
       console.log(`  Task returned to worker for fixes`);
@@ -1231,25 +1034,13 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/iteration`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          iteration: parseInt(options.iteration, 10),
-          status: options.status,
-          issues,
-          duration: parseFloat(options.duration),
-        }),
+      const api = getApiClient();
+      const data = await api.post<{ qaStatus: string; issuesCount: number; message: string }>(`/api/tasks/${taskId}/qa/iteration`, {
+        iteration: parseInt(options.iteration, 10),
+        status: options.status,
+        issues,
+        duration: parseFloat(options.duration),
       });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
-
-      const data = await res.json();
       console.log(`✓ QA iteration ${options.iteration} recorded`);
       console.log(`  Status: ${data.qaStatus}`);
       console.log(`  Issues: ${data.issuesCount}`);
@@ -1270,17 +1061,8 @@ taskCommand
     const taskId = getTaskId(options);
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/tasks/${taskId}/qa/approve`, {
-        method: "PUT",  // PUT for escalation
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error(`API error: ${res.status}`);
-      }
+      const api = getApiClient();
+      await api.put(`/api/tasks/${taskId}/qa/approve`, {});
 
       console.log(`⚠ QA escalated to human review for task ${taskId}`);
     } catch (error) {
@@ -1342,27 +1124,18 @@ taskCommand
     }
 
     try {
-      const res = await fetch(`${config.apiUrl}/api/merge-conflict/resolve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
-        },
-        body: JSON.stringify({
-          filePath: options.file,
-          oursContent,
-          theirsContent,
-          baseContent,
-          context: options.context,
-        }),
+      const api = getApiClient();
+      const result = await api.post<{
+        confidence: number;
+        resolvedContent: string;
+        explanation: string;
+      }>("/api/merge-conflict/resolve", {
+        filePath: options.file,
+        oursContent,
+        theirsContent,
+        baseContent,
+        context: options.context,
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: `API error: ${res.status}` }));
-        throw new Error(errorData.error || `API error: ${res.status}`);
-      }
-
-      const result = await res.json();
 
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
