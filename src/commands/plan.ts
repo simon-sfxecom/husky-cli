@@ -11,13 +11,56 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { apiClient } from "../lib/api-client.js";
+import { getApiClient } from "../lib/api-client.js";
 
 const program = new Command();
 
 program
   .name("plan")
   .description("Plan approval workflow commands");
+
+interface TaskResponse {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+interface PlanSubmitResponse {
+  success: boolean;
+  planId: string;
+  message: string;
+}
+
+interface Plan {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskDescription?: string;
+  workerId: string;
+  workerName?: string;
+  plan: string;
+  estimatedSteps?: number;
+  estimatedFiles?: string[];
+  questions?: string[];
+  status: string;
+  supervisorNotes?: string;
+  createdAt: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+}
+
+interface PlansListResponse {
+  plans: Plan[];
+}
+
+interface PlanGetResponse {
+  plan: Plan;
+}
+
+interface PlanUpdateResponse {
+  success: boolean;
+  message: string;
+}
 
 /**
  * Submit a plan for supervisor review
@@ -33,21 +76,23 @@ program
   .option("--questions <questions>", "Questions for supervisor (comma-separated)")
   .action(async (options) => {
     try {
+      const api = getApiClient();
+
       // First get the task to get title if not provided
       let taskTitle = options.title;
       let taskDescription: string | undefined;
 
       if (!taskTitle) {
-        const taskResult = await apiClient.get<{ id: string; title: string; description?: string }>(`/api/tasks/${options.taskId}`);
-        if (taskResult.success && taskResult.data) {
-          taskTitle = taskResult.data.title;
-          taskDescription = taskResult.data.description;
-        } else {
+        try {
+          const task = await api.get<TaskResponse>(`/api/tasks/${options.taskId}`);
+          taskTitle = task.title;
+          taskDescription = task.description;
+        } catch {
           taskTitle = `Task ${options.taskId}`;
         }
       }
 
-      const result = await apiClient.post<{ success: boolean; planId: string; message: string }>("/api/plans", {
+      const result = await api.post<PlanSubmitResponse>("/api/plans", {
         taskId: options.taskId,
         taskTitle,
         taskDescription,
@@ -57,18 +102,13 @@ program
         questions: options.questions ? options.questions.split(",").map((q: string) => q.trim()) : undefined,
       });
 
-      if (result.success && result.data) {
-        console.log(chalk.green("✓ Plan submitted for supervisor review"));
-        console.log(`  Plan ID: ${chalk.cyan(result.data.planId)}`);
-        console.log(`  Task: ${taskTitle}`);
-        console.log(chalk.yellow("\n⏳ Waiting for supervisor approval..."));
-        console.log(chalk.dim("   You will be notified when the plan is reviewed."));
-      } else {
-        console.error(chalk.red("✗ Failed to submit plan:"), result.error);
-        process.exit(1);
-      }
+      console.log(chalk.green("✓ Plan submitted for supervisor review"));
+      console.log(`  Plan ID: ${chalk.cyan(result.planId)}`);
+      console.log(`  Task: ${taskTitle}`);
+      console.log(chalk.yellow("\n⏳ Waiting for supervisor approval..."));
+      console.log(chalk.dim("   You will be notified when the plan is reviewed."));
     } catch (error) {
-      console.error(chalk.red("✗ Error:"), error);
+      console.error(chalk.red("✗ Failed to submit plan:"), error instanceof Error ? error.message : error);
       process.exit(1);
     }
   });
@@ -81,42 +121,28 @@ program
   .description("List pending plans awaiting review (supervisor)")
   .action(async () => {
     try {
-      const result = await apiClient.get<{ plans: Array<{
-        id: string;
-        taskId: string;
-        taskTitle: string;
-        workerId: string;
-        workerName?: string;
-        plan: string;
-        status: string;
-        createdAt: string;
-      }> }>("/api/plans");
+      const api = getApiClient();
+      const result = await api.get<PlansListResponse>("/api/plans");
+      const { plans } = result;
 
-      if (result.success && result.data) {
-        const { plans } = result.data;
-
-        if (plans.length === 0) {
-          console.log(chalk.yellow("No pending plans"));
-          return;
-        }
-
-        console.log(chalk.bold(`\n📋 Pending Plans (${plans.length}):\n`));
-
-        for (const plan of plans) {
-          console.log(chalk.cyan(`  ${plan.id.substring(0, 8)}`), chalk.white(plan.taskTitle));
-          console.log(`    Worker: ${plan.workerName || plan.workerId}`);
-          console.log(`    Preview: ${plan.plan.substring(0, 100)}...`);
-          console.log("");
-        }
-
-        console.log(chalk.dim("Use: husky plan get <id> to see full plan"));
-        console.log(chalk.dim("Use: husky plan approve <id> or husky plan reject <id>"));
-      } else {
-        console.error(chalk.red("✗ Failed to list plans:"), result.error);
-        process.exit(1);
+      if (plans.length === 0) {
+        console.log(chalk.yellow("No pending plans"));
+        return;
       }
+
+      console.log(chalk.bold(`\n📋 Pending Plans (${plans.length}):\n`));
+
+      for (const plan of plans) {
+        console.log(chalk.cyan(`  ${plan.id.substring(0, 8)}`), chalk.white(plan.taskTitle));
+        console.log(`    Worker: ${plan.workerName || plan.workerId}`);
+        console.log(`    Preview: ${plan.plan.substring(0, 100)}...`);
+        console.log("");
+      }
+
+      console.log(chalk.dim("Use: husky plan get <id> to see full plan"));
+      console.log(chalk.dim("Use: husky plan approve <id> or husky plan reject <id>"));
     } catch (error) {
-      console.error(chalk.red("✗ Error:"), error);
+      console.error(chalk.red("✗ Failed to list plans:"), error instanceof Error ? error.message : error);
       process.exit(1);
     }
   });
@@ -130,75 +156,54 @@ program
   .argument("<id>", "Plan ID")
   .action(async (id) => {
     try {
-      const result = await apiClient.get<{ plan: {
-        id: string;
-        taskId: string;
-        taskTitle: string;
-        taskDescription?: string;
-        workerId: string;
-        workerName?: string;
-        plan: string;
-        estimatedSteps?: number;
-        estimatedFiles?: string[];
-        questions?: string[];
-        status: string;
-        supervisorNotes?: string;
-        createdAt: string;
-        approvedAt?: string;
-        rejectedAt?: string;
-      } }>(`/api/plans/${id}`);
+      const api = getApiClient();
+      const result = await api.get<PlanGetResponse>(`/api/plans/${id}`);
+      const { plan } = result;
 
-      if (result.success && result.data) {
-        const { plan } = result.data;
+      console.log(chalk.bold(`\n📋 Plan: ${plan.taskTitle}\n`));
+      console.log(`  Plan ID: ${chalk.cyan(plan.id)}`);
+      console.log(`  Task ID: ${plan.taskId}`);
+      console.log(`  Worker: ${plan.workerName || plan.workerId}`);
+      console.log(`  Status: ${plan.status === "pending" ? chalk.yellow(plan.status) : plan.status === "approved" ? chalk.green(plan.status) : chalk.red(plan.status)}`);
 
-        console.log(chalk.bold(`\n📋 Plan: ${plan.taskTitle}\n`));
-        console.log(`  Plan ID: ${chalk.cyan(plan.id)}`);
-        console.log(`  Task ID: ${plan.taskId}`);
-        console.log(`  Worker: ${plan.workerName || plan.workerId}`);
-        console.log(`  Status: ${plan.status === "pending" ? chalk.yellow(plan.status) : plan.status === "approved" ? chalk.green(plan.status) : chalk.red(plan.status)}`);
+      if (plan.taskDescription) {
+        console.log(`\n  ${chalk.dim("Task Description:")}`);
+        console.log(`  ${plan.taskDescription}`);
+      }
 
-        if (plan.taskDescription) {
-          console.log(`\n  ${chalk.dim("Task Description:")}`);
-          console.log(`  ${plan.taskDescription}`);
+      console.log(`\n  ${chalk.bold("Implementation Plan:")}`);
+      console.log(`  ${plan.plan}`);
+
+      if (plan.estimatedSteps) {
+        console.log(`\n  Estimated Steps: ${plan.estimatedSteps}`);
+      }
+
+      if (plan.estimatedFiles && plan.estimatedFiles.length > 0) {
+        console.log(`\n  Files to modify:`);
+        for (const file of plan.estimatedFiles) {
+          console.log(`    - ${file}`);
         }
+      }
 
-        console.log(`\n  ${chalk.bold("Implementation Plan:")}`);
-        console.log(`  ${plan.plan}`);
-
-        if (plan.estimatedSteps) {
-          console.log(`\n  Estimated Steps: ${plan.estimatedSteps}`);
+      if (plan.questions && plan.questions.length > 0) {
+        console.log(chalk.yellow(`\n  Questions for Supervisor:`));
+        for (const q of plan.questions) {
+          console.log(`    • ${q}`);
         }
+      }
 
-        if (plan.estimatedFiles && plan.estimatedFiles.length > 0) {
-          console.log(`\n  Files to modify:`);
-          for (const file of plan.estimatedFiles) {
-            console.log(`    - ${file}`);
-          }
-        }
+      if (plan.supervisorNotes) {
+        console.log(chalk.blue(`\n  Supervisor Notes:`));
+        console.log(`  ${plan.supervisorNotes}`);
+      }
 
-        if (plan.questions && plan.questions.length > 0) {
-          console.log(chalk.yellow(`\n  Questions for Supervisor:`));
-          for (const q of plan.questions) {
-            console.log(`    • ${q}`);
-          }
-        }
-
-        if (plan.supervisorNotes) {
-          console.log(chalk.blue(`\n  Supervisor Notes:`));
-          console.log(`  ${plan.supervisorNotes}`);
-        }
-
-        if (plan.status === "pending") {
-          console.log(chalk.dim("\nCommands:"));
-          console.log(chalk.dim(`  husky plan approve ${plan.id} --notes "LGTM"`));
-          console.log(chalk.dim(`  husky plan reject ${plan.id} --notes "Needs more detail"`));
-        }
-      } else {
-        console.error(chalk.red("✗ Plan not found:"), result.error);
-        process.exit(1);
+      if (plan.status === "pending") {
+        console.log(chalk.dim("\nCommands:"));
+        console.log(chalk.dim(`  husky plan approve ${plan.id} --notes "LGTM"`));
+        console.log(chalk.dim(`  husky plan reject ${plan.id} --notes "Needs more detail"`));
       }
     } catch (error) {
-      console.error(chalk.red("✗ Error:"), error);
+      console.error(chalk.red("✗ Plan not found:"), error instanceof Error ? error.message : error);
       process.exit(1);
     }
   });
@@ -213,20 +218,16 @@ program
   .option("--notes <notes>", "Approval notes for the worker")
   .action(async (id, options) => {
     try {
-      const result = await apiClient.patch<{ success: boolean; message: string }>(`/api/plans/${id}`, {
+      const api = getApiClient();
+      await api.patch<PlanUpdateResponse>(`/api/plans/${id}`, {
         status: "approved",
         supervisorNotes: options.notes,
       });
 
-      if (result.success) {
-        console.log(chalk.green("✓ Plan approved"));
-        console.log(chalk.dim("  Worker has been notified and can proceed with implementation."));
-      } else {
-        console.error(chalk.red("✗ Failed to approve plan:"), result.error);
-        process.exit(1);
-      }
+      console.log(chalk.green("✓ Plan approved"));
+      console.log(chalk.dim("  Worker has been notified and can proceed with implementation."));
     } catch (error) {
-      console.error(chalk.red("✗ Error:"), error);
+      console.error(chalk.red("✗ Failed to approve plan:"), error instanceof Error ? error.message : error);
       process.exit(1);
     }
   });
@@ -241,20 +242,16 @@ program
   .requiredOption("--notes <notes>", "Rejection reason (required)")
   .action(async (id, options) => {
     try {
-      const result = await apiClient.patch<{ success: boolean; message: string }>(`/api/plans/${id}`, {
+      const api = getApiClient();
+      await api.patch<PlanUpdateResponse>(`/api/plans/${id}`, {
         status: "rejected",
         supervisorNotes: options.notes,
       });
 
-      if (result.success) {
-        console.log(chalk.yellow("✓ Plan rejected"));
-        console.log(chalk.dim("  Worker has been notified to revise the plan."));
-      } else {
-        console.error(chalk.red("✗ Failed to reject plan:"), result.error);
-        process.exit(1);
-      }
+      console.log(chalk.yellow("✓ Plan rejected"));
+      console.log(chalk.dim("  Worker has been notified to revise the plan."));
     } catch (error) {
-      console.error(chalk.red("✗ Error:"), error);
+      console.error(chalk.red("✗ Failed to reject plan:"), error instanceof Error ? error.message : error);
       process.exit(1);
     }
   });
@@ -269,20 +266,16 @@ program
   .requiredOption("--notes <notes>", "Revision feedback (required)")
   .action(async (id, options) => {
     try {
-      const result = await apiClient.patch<{ success: boolean; message: string }>(`/api/plans/${id}`, {
+      const api = getApiClient();
+      await api.patch<PlanUpdateResponse>(`/api/plans/${id}`, {
         status: "revision_requested",
         supervisorNotes: options.notes,
       });
 
-      if (result.success) {
-        console.log(chalk.blue("✓ Revision requested"));
-        console.log(chalk.dim("  Worker has been notified to address the feedback."));
-      } else {
-        console.error(chalk.red("✗ Failed to request revision:"), result.error);
-        process.exit(1);
-      }
+      console.log(chalk.blue("✓ Revision requested"));
+      console.log(chalk.dim("  Worker has been notified to address the feedback."));
     } catch (error) {
-      console.error(chalk.red("✗ Error:"), error);
+      console.error(chalk.red("✗ Failed to request revision:"), error instanceof Error ? error.message : error);
       process.exit(1);
     }
   });
