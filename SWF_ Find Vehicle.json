@@ -1,0 +1,591 @@
+{
+  "name": "SWF: Find Vehicle",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f0cfc92b-45b7-43b0-8cda-e50135c92472",
+              "leftValue": "={{ $json.brand_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1568,
+        -96
+      ],
+      "id": "be134ea3-34ab-44be-878f-8bc191878539",
+      "name": "Check if brand_id is not empty"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "Dq7efcRisHtr4XXu",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/Dq7efcRisHtr4XXu",
+          "cachedResultName": "SFX E-Commerce — Brands Indentifier Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "query": "={{ $('Execute Find Most Similiar VehicleModelVariant').item.json.origin_input }}"
+          },
+          "matchingColumns": [
+            "query"
+          ],
+          "schema": [
+            {
+              "id": "query",
+              "displayName": "query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1344,
+        -96
+      ],
+      "id": "006de789-36c9-44b2-9ea9-7e36f5762ccb",
+      "name": "Execute Brand Identifier Agent"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "jxgbHlWdk1w2k9mP",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/jxgbHlWdk1w2k9mP",
+          "cachedResultName": "SFX E-Commerce — Extract Vehicle Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "brand_id": "={{ $json.brand_id }}",
+            "brand": "={{ $json.brand_name }}",
+            "input": "={{ $('Start').item.json.vehicles}}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "input",
+              "displayName": "input",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "brand",
+              "displayName": "brand",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "brand_id",
+              "displayName": "brand_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1824,
+        -224
+      ],
+      "id": "5a3d26f4-55f2-4e6a-997f-0c5902756f84",
+      "name": "Call Extract Vehicle Agent"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "IyTyBMpjnVfeFIYI",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/IyTyBMpjnVfeFIYI",
+          "cachedResultName": "SFX E-Commerce — SWF: Vehicle Variant Alias Validation & Update"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "document_metadata_NocodbID": "={{ $json.document.metadata.NocodbID }}",
+            "vehicles": "={{ $('Start').item.json.vehicles }}",
+            "vehicles_toLowerCase": "={{ $('Start').item.json.vehicles }}"
+          },
+          "matchingColumns": [
+            "document_metadata_NocodbID",
+            "vehicles",
+            "vehicles_toLowerCase"
+          ],
+          "schema": [
+            {
+              "id": "document_metadata_NocodbID",
+              "displayName": "document_metadata_NocodbID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vehicles",
+              "displayName": "vehicles",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "vehicles_toLowerCase",
+              "displayName": "vehicles_toLowerCase",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        -144
+      ],
+      "name": "Call SWF: Vehicle Variant Alias Validation & Update",
+      "id": "ed777cce-ded4-4b48-b5b1-8c6595a367ef"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4faccf7b-0f59-4d34-91d8-7ef2b47cb562",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        -144
+      ],
+      "id": "6553e316-5b95-4cf9-9ab0-c6670a62e451",
+      "name": "Check if success"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "2zSPE0tlhubXHMe8",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/2zSPE0tlhubXHMe8",
+          "cachedResultName": "SFX E-Commerce — SWF: Qdrant - Find most similiar VehicleVariantModels"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "vehicle_variant_model": "={{ $json.vehicles }}"
+          },
+          "matchingColumns": [
+            "vehicle_variant_model"
+          ],
+          "schema": [
+            {
+              "id": "vehicle_variant_model",
+              "displayName": "vehicle_variant_model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        448,
+        -240
+      ],
+      "id": "3ab65b28-7654-4156-96af-594b372865a8",
+      "name": "Execute Find Most Similiar VehicleModelVariant"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5991a87c-8454-4965-8547-3d71bc577080",
+              "leftValue": "={{ $json.score }}",
+              "rightValue": 0.97,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        -240
+      ],
+      "id": "0227dcc1-be97-458f-88a1-d528c64efb6f",
+      "name": "Check if score is greater or equal than 0.97"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ae88402b-7481-48ab-af31-f855647dcfed",
+              "name": "nocodb_vehicle_variant_id",
+              "value": "={{ $json.vehicle_variants_id }}",
+              "type": "string"
+            },
+            {
+              "id": "8d317e11-4257-4c82-9e0c-7856cdf14931",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1344,
+        -336
+      ],
+      "id": "9576f8ab-d44f-4780-968e-92a2ea509d7a",
+      "name": "Set VehicleIDs"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "vehicles",
+              "type": "any"
+            }
+          ]
+        }
+      },
+      "id": "15bc1dc1-3860-4734-864c-968ae8ffb1a7",
+      "typeVersion": 1.1,
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        240,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ae88402b-7481-48ab-af31-f855647dcfed",
+              "name": "nocodb_vehicle_variant_id",
+              "value": "={{ $json.document.metadata.NocodbID }}",
+              "type": "string"
+            },
+            {
+              "id": "f15dc058-1b07-4014-9fda-8f6ec735d09d",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        912,
+        -304
+      ],
+      "id": "4a858b16-5a6f-4923-93d8-125f761cfa2d",
+      "name": "Set VehicleIDs1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ae88402b-7481-48ab-af31-f855647dcfed",
+              "name": "nocodb_vehicle_variant_id",
+              "value": "={{ $json.nocodb_vehicle_variant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "43b1d077-5f1a-47f7-ae1a-0c7b4d1b2fcb",
+              "name": "success",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2064,
+        -240
+      ],
+      "id": "5e9ae79d-efa9-4987-9c4f-da19986c8a6a",
+      "name": "Set VehicleIDs2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "43b1d077-5f1a-47f7-ae1a-0c7b4d1b2fcb",
+              "name": "success",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "3976dbbe-2878-45bf-a219-eebedcf4e430",
+              "name": "message",
+              "value": "No Out Brand",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1872,
+        -16
+      ],
+      "id": "74fa6a5e-9175-4a1e-843c-ab41da9afb46",
+      "name": "Set Output no brand"
+    }
+  ],
+  "pinData": {
+    "Start": [
+      {
+        "json": {
+          "vehicles": "Techlife Q3 2.0"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Check if brand_id is not empty": {
+      "main": [
+        [
+          {
+            "node": "Call Extract Vehicle Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Output no brand",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Brand Identifier Agent": {
+      "main": [
+        [
+          {
+            "node": "Check if brand_id is not empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Find Most Similiar VehicleModelVariant": {
+      "main": [
+        [
+          {
+            "node": "Check if score is greater or equal than 0.97",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if score is greater or equal than 0.97": {
+      "main": [
+        [
+          {
+            "node": "Set VehicleIDs1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call SWF: Vehicle Variant Alias Validation & Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call SWF: Vehicle Variant Alias Validation & Update": {
+      "main": [
+        [
+          {
+            "node": "Check if success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if success": {
+      "main": [
+        [
+          {
+            "node": "Set VehicleIDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute Brand Identifier Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set VehicleIDs": {
+      "main": [
+        []
+      ]
+    },
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Execute Find Most Similiar VehicleModelVariant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Extract Vehicle Agent": {
+      "main": [
+        [
+          {
+            "node": "Set VehicleIDs2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e7829b2e-c60e-401c-9a63-c0336cc63208",
+  "meta": {
+    "instanceId": "1bc0f4fa5e7d17ac362404cbb49337e51e5061e019cfa24022a8667c1f1ce287"
+  },
+  "id": "L7pkxjcEXjzK8J8H",
+  "tags": []
+}

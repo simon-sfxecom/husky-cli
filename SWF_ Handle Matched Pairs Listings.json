@@ -1,0 +1,829 @@
+{
+  "name": "SWF: Handle Matched Pairs Listings",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "match_array",
+              "type": "array"
+            }
+          ]
+        }
+      },
+      "id": "c055762a-8fe7-4141-a639-df2372f30060",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        272,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "match_array",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        688,
+        352
+      ],
+      "id": "9a3b2a97-ae70-4ad1-899a-685775c859c8",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableName": "eBay Listings",
+        "rowId": "={{ $json.ebay_seatable_id }}",
+        "options": {
+          "simple": true,
+          "convert": true
+        }
+      },
+      "type": "n8n-nodes-base.seaTable",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        64
+      ],
+      "id": "52dc7489-674c-4db5-86e9-75281cda9cd0",
+      "name": "Get eBay Row",
+      "credentials": {
+        "seaTableApi": {
+          "id": "W45Oe674Dw1OFGRe",
+          "name": "SeaTable PIM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableName": "Shopify Listings",
+        "rowId": "={{ $json.shopify_seatable_id }}",
+        "options": {
+          "simple": true,
+          "convert": true
+        }
+      },
+      "type": "n8n-nodes-base.seaTable",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        336
+      ],
+      "id": "d0d39690-0e7a-43b9-943f-854fbcd82a89",
+      "name": "Get Shopify Item",
+      "credentials": {
+        "seaTableApi": {
+          "id": "W45Oe674Dw1OFGRe",
+          "name": "SeaTable PIM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "26588a3b-2d1b-4da2-b36c-9b6101d8100d",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "a9b3e3f3-6ec4-4522-9991-72352451ef7e",
+              "leftValue": "={{ $json.variants.length == 1 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2320,
+        448
+      ],
+      "id": "0d6deaec-ebae-421c-b946-064970edb356",
+      "name": "Check if product has been found & single variant"
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "product",
+        "operation": "get",
+        "productId": "={{ $json.shopify_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        336
+      ],
+      "id": "e5caab93-adac-4c4f-9a58-e7115d4bd8e7",
+      "name": "Query For Shopify by id",
+      "credentials": {
+        "shopifyAccessTokenApi": {
+          "id": "Q0RbYBvgS6oKrN6G",
+          "name": "Shopify Main Acc"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## we could save us the extra seatable query by adjusting the output of the workflow before",
+        "height": 208
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        848,
+        608
+      ],
+      "id": "cea43d88-a271-4d90-8673-0a2c57a3c3a4",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "url": "http://ebay-connector-nextjs.vercel.app/api/ebay/cmggns0dk0001jr04tb7ljtkk/trading/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "itemId",
+              "value": "={{ $json.SourceID }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2112,
+        64
+      ],
+      "id": "5356defb-1b81-4bed-a932-d0d9dc17e840",
+      "name": "Check Active Status",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "SmmLHmKl6hP4nkW1",
+          "name": "eBay Connector (Vercel)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Sends the formatted listing data (POST) to the eBay connector API (.../api/ebay/.../trading/listing) to create the item."
+    },
+    {
+      "parameters": {
+        "url": "http://ebay-connector-nextjs.vercel.app/api/ebay/cmggns0dk0001jr04tb7ljtkk/trading/listing",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "itemId",
+              "value": "={{ $json.data.itemId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        64
+      ],
+      "id": "b55ca45f-068b-4096-ac5d-ca65485d0bd2",
+      "name": "Get ListingData",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "SmmLHmKl6hP4nkW1",
+          "name": "eBay Connector (Vercel)"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "notes": "Sends the formatted listing data (POST) to the eBay connector API (.../api/ebay/.../trading/listing) to create the item."
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "create",
+        "projectId": "pobn8zbs31sbv00",
+        "table": "mcfsrmiy8oo9c8d",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "Title",
+              "fieldValue": "={{ $json.data.Title }}"
+            },
+            {
+              "fieldName": "SourceID",
+              "fieldValue": "={{ $json.data.ItemID }}"
+            },
+            {
+              "fieldName": "DescriptionHTML",
+              "fieldValue": "={{ $json.data.Description }}"
+            },
+            {
+              "fieldName": "eBay Category",
+              "fieldValue": "={{ $json.data.PrimaryCategory.CategoryID }}"
+            },
+            {
+              "fieldName": "PriceVATDE",
+              "fieldValue": "={{ $json.data.SellingStatus.CurrentPrice._value }}"
+            },
+            {
+              "fieldName": "ConditionID",
+              "fieldValue": "={{ $json.data.ConditionID }}"
+            },
+            {
+              "fieldName": "VAT",
+              "fieldValue": "={{ $json.data.VATDetails.VATPercent }}"
+            },
+            {
+              "fieldName": "SourceAddedToBillbee",
+              "fieldValue": "true"
+            },
+            {
+              "fieldName": "ErrorMessage"
+            },
+            {
+              "fieldName": "ManagedByChannable",
+              "fieldValue": "false"
+            },
+            {
+              "fieldName": "ListingStatus",
+              "fieldValue": "listed"
+            },
+            {
+              "fieldName": "ProcessedBy",
+              "fieldValue": "=Data Migration {{$workflow.id }}/{{$execution.id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        2640,
+        -96
+      ],
+      "id": "5ba2f597-1612-46ca-b284-d73523cf372c",
+      "name": "Create eBay Feed Item",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "hC8iDZn6xgWzmONK",
+          "name": "NocoDB virav"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "create",
+        "projectId": "pobn8zbs31sbv00",
+        "table": "m1d5rhlfjhm2uek",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "ProductID",
+              "fieldValue": "={{ $json.id }}"
+            },
+            {
+              "fieldName": "VariantID",
+              "fieldValue": "={{ $json.variants[0].id }}"
+            },
+            {
+              "fieldName": "Title",
+              "fieldValue": "={{ $json.title }}"
+            },
+            {
+              "fieldName": "BodyHTML",
+              "fieldValue": "={{ $json.body_html }}"
+            },
+            {
+              "fieldName": "DefaultProductType",
+              "fieldValue": "={{ $('Get Shopify Item').item.json.standard_product_type }}"
+            },
+            {
+              "fieldName": "tags",
+              "fieldValue": "={{ $json.tags }}"
+            },
+            {
+              "fieldName": "PublishedScope",
+              "fieldValue": "={{ $json.published_scope }}"
+            },
+            {
+              "fieldName": "InventoryManagement",
+              "fieldValue": "={{ $json.variants[0].inventory_management }}"
+            },
+            {
+              "fieldName": "VAT",
+              "fieldValue": "19"
+            },
+            {
+              "fieldName": "isDefaultVariationDetailsAdded",
+              "fieldValue": "true"
+            },
+            {
+              "fieldName": "isImageAdded",
+              "fieldValue": "={{ $json.images.length >= 1}}"
+            },
+            {
+              "fieldName": "isSalesChannelAdded",
+              "fieldValue": "true"
+            },
+            {
+              "fieldName": "AddedSourceInBillbee",
+              "fieldValue": "true"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        2576,
+        432
+      ],
+      "id": "9f3f7785-d64b-49e5-855e-241121468c06",
+      "name": "Create Item ShopifyFeed",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "hC8iDZn6xgWzmONK",
+          "name": "NocoDB virav"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## todo\nadd edge cases \nput into swfgs\nerror handling etc\nbillbee source validation"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        624
+      ],
+      "id": "9da793d3-abb2-4f12-b659-00f84bc60d4e",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0155776-fb3b-4809-88ac-88c175342d9a",
+              "name": "shopify_feed_id",
+              "value": "={{ $json.Id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2848,
+        224
+      ],
+      "id": "25f86e2a-bfdd-4feb-b8db-e9c188ac256b",
+      "name": "Set shopify_feed_id"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {
+          "includeUnpaired": true
+        }
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3088,
+        176
+      ],
+      "id": "1d7fe049-5053-438e-9b21-3a2dde22d05d",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "content": "## input should have type aftermarket/oem/original etc"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1584,
+        592
+      ],
+      "id": "f2d3d025-70e6-4350-bc83-8ce4caf66fd6",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0155776-fb3b-4809-88ac-88c175342d9a",
+              "name": "ebay_feed_id",
+              "value": "={{ $json.Id }}",
+              "type": "number"
+            },
+            {
+              "id": "94a5c028-85ea-4b55-bf4e-91947f3f6b8d",
+              "name": "Title",
+              "value": "={{ $json.Title }}",
+              "type": "string"
+            },
+            {
+              "id": "a7124c17-1a71-40f5-b0fc-944954c3d642",
+              "name": "sku",
+              "value": "={{ $('Get eBay Row').item.json.SKU }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2832,
+        -32
+      ],
+      "id": "1968cc9c-ba0d-425f-bfc5-37299a6869ae",
+      "name": "Set ebay_feed_id &metdata"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e64715e4-149c-4e49-aeb7-421bde0cb99b",
+              "leftValue": "={{ $json.ebay_seatable_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1152,
+        240
+      ],
+      "id": "7f92bbae-2526-4c1e-a182-b39d5b1b5ee4",
+      "name": "Check if ebay_seatable_id is not empty"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e64715e4-149c-4e49-aeb7-421bde0cb99b",
+              "leftValue": "={{ $json.shopify_seatable_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1152,
+        432
+      ],
+      "id": "17823613-e4a8-48ca-bde9-449a434808d4",
+      "name": "Check if shopify_seatable_id is not empty"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b07b8034-0bce-47e5-90c4-09ab5b1bc5f3",
+              "name": "success",
+              "value": "={{ $json.shopify_sku || $json.ebay_sku ? true : false }}",
+              "type": "boolean"
+            },
+            {
+              "id": "47f405fc-6269-40f2-b82b-4fd196864f37",
+              "name": "Title",
+              "value": "={{ $json.ebay_title || $('Create Item ShopifyFeed').item.json.Title }}",
+              "type": "string"
+            },
+            {
+              "id": "4ace1b86-77ba-4f55-8591-361731d8f784",
+              "name": "sku",
+              "value": "={{ $json.ebay_sku ? $json.ebay_sku : $('Get Shopify Item').item.json.sku }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3296,
+        176
+      ],
+      "id": "19aebea1-8312-433c-8e65-26e587bee8c9",
+      "name": "Set Output"
+    }
+  ],
+  "pinData": {
+    "Create Item ShopifyFeed": [
+      {
+        "json": {
+          "ProductID": 8363476451665,
+          "VariantID": 46510890680657,
+          "Title": "Bremsbelag Semi Metall 21,4*24,1*5,9 mm E-Scooter Fahrrad",
+          "BodyHTML": "<p><b>Bremsbelag Semi Metall 21,4*24,1*5,9 mm Aftermarket</b></p>  <p>Bietet eine herausragende Bremsleistung und ist ideal für anspruchsvolles Fahren. Die halbmetallische Zusammensetzung sorgt für eine optimale Balance zwischen hoher Bremskraft und geringem Verschleiß. Mit seiner hohen Hitzebeständigkeit und ausgezeichneten Leistungseigenschaften ist dieser Bremsbelag ideal für den Einsatz im Straßenverkehr und im Gelände geeignet.</p>  <p><b>Lieferumfang:</b></p>  <ul>     <li>Bremsbelag (Semi Metall)</li> </ul>  <p><b>Aftermarket-Produkt</b></p>",
+          "DefaultProductType": "Fahrzeugersatzteile & -zubehör",
+          "tags": "Bremsbelag, Generic",
+          "PublishedScope": "web",
+          "InventoryManagement": "shopify",
+          "VAT": "19",
+          "isDefaultVariationDetailsAdded": "true",
+          "isImageAdded": true,
+          "isSalesChannelAdded": "true",
+          "AddedSourceInBillbee": "true",
+          "Id": 774
+        }
+      }
+    ],
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "match_array": [
+            {
+              "ebay_seatable_id": "BXAGFV3hQHm9QX2NLTchxQ",
+              "ebay_sku": "Z0290",
+              "ebay_title": "IO Hawk Legend Ladeanschluss GX16 zu XT30",
+              "shopify_seatable_id": "eE-l3MiyTg26yReLiffxEA",
+              "shopify_sku": "Z0290",
+              "shopify_title": "IO Hawk Legend GX16-Ladebuchse mit XT30-Stecker mit Abdeckung",
+              "confidence": 0.8737607914731403,
+              "status": "match"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Check if ebay_seatable_id is not empty",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check if shopify_seatable_id is not empty",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Shopify Item": {
+      "main": [
+        [
+          {
+            "node": "Query For Shopify by id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query For Shopify by id": {
+      "main": [
+        [
+          {
+            "node": "Check if product has been found & single variant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get eBay Row": {
+      "main": [
+        [
+          {
+            "node": "Check Active Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Active Status": {
+      "main": [
+        [
+          {
+            "node": "Get ListingData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get ListingData": {
+      "main": [
+        [
+          {
+            "node": "Create eBay Feed Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if product has been found & single variant": {
+      "main": [
+        [
+          {
+            "node": "Create Item ShopifyFeed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create eBay Feed Item": {
+      "main": [
+        [
+          {
+            "node": "Set ebay_feed_id &metdata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Item ShopifyFeed": {
+      "main": [
+        [
+          {
+            "node": "Set shopify_feed_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set shopify_feed_id": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Set ebay_feed_id &metdata": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if ebay_seatable_id is not empty": {
+      "main": [
+        [
+          {
+            "node": "Get eBay Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if shopify_seatable_id is not empty": {
+      "main": [
+        [
+          {
+            "node": "Get Shopify Item",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Set Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "bfd4d1fb-a598-4e69-99af-d424bb82a8d1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1bc0f4fa5e7d17ac362404cbb49337e51e5061e019cfa24022a8667c1f1ce287"
+  },
+  "id": "jr5HwGDkNryfaGcL",
+  "tags": []
+}

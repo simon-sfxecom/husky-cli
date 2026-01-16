@@ -8,18 +8,11 @@
 import { getConfig, hasPermission, getRole, fetchAndCacheRole, clearRoleCache } from "../commands/config.js";
 import { ExplainTopic } from "./error-hints.js";
 
-// Agent roles (must match dashboard types.ts and config.ts VALID_ROLES)
-export type AgentRole =
-  | "admin"
-  | "supervisor"
-  | "worker"
-  | "reviewer"
-  | "e2e_agent"
-  | "pr_agent"
-  | "support"
-  | "devops"
-  | "purchasing"
-  | "ops";
+// Import canonical role type from shared package
+import type { AgentRole as SharedAgentRole } from "@husky/shared";
+
+// Re-export for CLI usage
+export type AgentRole = SharedAgentRole;
 
 /**
  * Check if current user has a specific permission.

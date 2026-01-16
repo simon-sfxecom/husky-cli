@@ -14,3 +14,18 @@ export * from './billbee-types.js';
 export * from './zendesk-types.js';
 export * from './seatable-types.js';
 export { GotessClient } from './gotess.js';
+export { ShopifyClient } from './shopify.js';
+export type {
+  Order as ShopifyOrder,
+  Customer as ShopifyCustomer,
+  Product as ShopifyProduct,
+  ShopMetrics,
+} from './shopify.js';
+export { SupplierFeedService } from './supplier-feed.js';
+export type {
+  SupplierId,
+  SupplierProduct,
+  SupplierProductSearchResult,
+  SyncStats,
+} from './supplier-feed.js';
+export * from './supplier-feed-types.js';

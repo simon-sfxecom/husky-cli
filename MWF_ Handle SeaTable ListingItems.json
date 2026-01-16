@@ -1,0 +1,947 @@
+{
+  "name": "MWF: Handle SeaTable ListingItems",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ $json.title }}"
+            },
+            {
+              "name": "model",
+              "value": "text-embedding-3-small"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        192
+      ],
+      "id": "8ca0afa7-5367-41a4-a8de-0fc02f2ea261",
+      "name": "Create OpenAI Embeddings",
+      "credentials": {
+        "openAiApi": {
+          "id": "sDhWf4fRwgjfoMmu",
+          "name": "OpenAi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ $json.Title }}"
+            },
+            {
+              "name": "model",
+              "value": "text-embedding-3-small"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "09c73cc0-5626-41bb-94ab-ef867a3303a4",
+      "name": "Create OpenAI Embeddings1",
+      "credentials": {
+        "openAiApi": {
+          "id": "sDhWf4fRwgjfoMmu",
+          "name": "OpenAi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fe33ef65-82f0-4bcc-9b02-f0a873e9ad19",
+              "name": "shopify_embedding",
+              "value": "={{ $json.data }}",
+              "type": "array"
+            },
+            {
+              "id": "84d910af-fb98-4868-8d88-1cb348f320ef",
+              "name": "sku",
+              "value": "={{ $('query shopify listing').item.json.sku }}",
+              "type": "string"
+            },
+            {
+              "id": "bf27fec7-5f2a-4a44-9e05-59f344de6790",
+              "name": "shopify_title",
+              "value": "={{ $('query shopify listing').item.json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "50e07633-2b9c-4fda-9cdb-80a16828509f",
+              "name": "seatable_shopify_id",
+              "value": "={{ $('query shopify listing').item.json._id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        624,
+        192
+      ],
+      "id": "8c36b714-e90e-4826-bbfa-4d0f7b5c53ef",
+      "name": "Set shopify data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fe33ef65-82f0-4bcc-9b02-f0a873e9ad19",
+              "name": "ebay_embedding",
+              "value": "={{ $json.data }}",
+              "type": "array"
+            },
+            {
+              "id": "84d910af-fb98-4868-8d88-1cb348f320ef",
+              "name": "sku",
+              "value": "={{ $('query  ebay listing').item.json.SKU }}",
+              "type": "string"
+            },
+            {
+              "id": "bf27fec7-5f2a-4a44-9e05-59f344de6790",
+              "name": "title_de",
+              "value": "={{ $('query  ebay listing').item.json.Title }}",
+              "type": "string"
+            },
+            {
+              "id": "50e07633-2b9c-4fda-9cdb-80a16828509f",
+              "name": "ebay_shopify_id",
+              "value": "={{ $('query  ebay listing').item.json._id }}",
+              "type": "string"
+            },
+            {
+              "id": "9f838265-f476-46b4-a0d5-3a17f1796ce7",
+              "name": "type",
+              "value": "={{ $('query  ebay listing').item.json.Type ?? 'Aftermarket' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        624,
+        0
+      ],
+      "id": "f0e18b0c-0cb2-4835-8ca4-23336abcea98",
+      "name": "Set eBay Data"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        64
+      ],
+      "id": "a9e92d09-800e-4b87-9c63-df266381ab62",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code Node: eBay-Shopify Embedding Matcher (Greedy Bidirectional)\nconst allItems = $input.all().map(i => i.json);\nconst ebayItems = allItems.filter(i => i.ebay_embedding);\nconst shopifyItems = allItems.filter(i => i.shopify_embedding);\n\nconst threshold = 0.85;\nconst reviewThreshold = 0.70;\nconst lockThreshold = 0.90;\n\nfunction cosineSimilarity(vecA, vecB) {\n  if (!vecA?.length || !vecB?.length || vecA.length !== vecB.length) return 0;\n  let dot = 0, normA = 0, normB = 0;\n  for (let i = 0; i < vecA.length; i++) {\n    dot += vecA[i] * vecB[i];\n    normA += vecA[i] * vecA[i];\n    normB += vecB[i] * vecB[i];\n  }\n  const denom = Math.sqrt(normA) * Math.sqrt(normB);\n  return denom === 0 ? 0 : dot / denom;\n}\n\nfunction getStatus(score) {\n  if (score === null) return 'no_match';\n  if (score >= threshold) return 'match';\n  if (score >= reviewThreshold) return 'review';\n  return 'no_match';\n}\n\n// Unique ID Helpers (SeaTable ID statt SKU)\nconst getEbayId = (ebay) => ebay.ebay_shopify_id;\nconst getShopifyId = (shopify) => shopify.seatable_shopify_id;\n\n// Step 1: Alle Paare berechnen\nconst allPairs = [];\nfor (const ebay of ebayItems) {\n  const ebayEmb = ebay?.ebay_embedding?.[0]?.embedding;\n  if (!ebayEmb) continue;\n\n  for (const shopify of shopifyItems) {\n    const shopifyEmb = shopify?.shopify_embedding?.[0]?.embedding;\n    if (!shopifyEmb) continue;\n\n    allPairs.push({ ebay, shopify, score: cosineSimilarity(ebayEmb, shopifyEmb) });\n  }\n}\n\n// Step 2: Nach Score sortieren\nallPairs.sort((a, b) => b.score - a.score);\n\n// Step 3: Greedy Matching (by unique ID)\nconst lockedEbayIds = new Set();\nconst lockedShopifyIds = new Set();\nconst matchedEbayIds = new Set();\nconst matchedShopifyIds = new Set();\nconst matches = [];\n\nfor (const pair of allPairs) {\n  const ebayId = getEbayId(pair.ebay);\n  const shopifyId = getShopifyId(pair.shopify);\n\n  if (lockedEbayIds.has(ebayId) || lockedShopifyIds.has(shopifyId)) continue;\n\n  if (!matchedEbayIds.has(ebayId) && !matchedShopifyIds.has(shopifyId)) {\n    matches.push({ ebay: pair.ebay, shopify: pair.shopify, score: pair.score });\n\n    matchedEbayIds.add(ebayId);\n    matchedShopifyIds.add(shopifyId);\n\n    if (pair.score >= lockThreshold) {\n      lockedEbayIds.add(ebayId);\n      lockedShopifyIds.add(shopifyId);\n    }\n  }\n}\n\n// Step 4: Results\nconst results = [];\n\n// A) Matches\nfor (const match of matches) {\n  const hasValidMatch = match.score >= reviewThreshold;\n  results.push({\n    status: getStatus(match.score),\n    confidence: match.score,\n    ebay_sku: match.ebay.sku,\n    ebay_title: match.ebay.title_de,\n    ebay_seatable_id: getEbayId(match.ebay),\n    shopify_sku: hasValidMatch ? match.shopify.sku : null,\n    shopify_title: hasValidMatch ? match.shopify.shopify_title : null,\n    shopify_seatable_id: hasValidMatch ? getShopifyId(match.shopify) : null\n  });\n}\n\n// B) Ungematchte eBay Items\nfor (const ebay of ebayItems) {\n  if (!matchedEbayIds.has(getEbayId(ebay))) {\n    results.push({\n      status: 'no_match',\n      confidence: null,\n      ebay_sku: ebay.sku,\n      ebay_title: ebay.title_de,\n      ebay_seatable_id: getEbayId(ebay),\n      shopify_sku: null,\n      shopify_title: null,\n      shopify_seatable_id: null\n    });\n  }\n}\n\n// C) Ungematchte Shopify Items\nfor (const shopify of shopifyItems) {\n  if (!matchedShopifyIds.has(getShopifyId(shopify))) {\n    results.push({\n      status: 'no_match',\n      confidence: null,\n      ebay_sku: null,\n      ebay_title: null,\n      ebay_seatable_id: null,\n      shopify_sku: shopify.sku,\n      shopify_title: shopify.shopify_title,\n      shopify_seatable_id: getShopifyId(shopify)\n    });\n  }\n}\n\n// Fallback\nif (!results.length) {\n  return [{\n    json: {\n      status: 'no_match',\n      confidence: null,\n      ebay_sku: null,\n      ebay_title: null,\n      ebay_seatable_id: null,\n      shopify_sku: null,\n      shopify_title: null,\n      shopify_seatable_id: null\n    }\n  }];\n}\n\nreturn results.map(r => ({ json: r }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        64
+      ],
+      "id": "1364d121-988a-420f-a45b-b9b100eed752",
+      "name": "Compare Embeddings"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.status === 'match' ? 0 : ($json.status === 'review' ? 1 : 2) }}"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1504,
+        64
+      ],
+      "id": "3d844b1c-4ab9-415f-be47-44d64238e2e6",
+      "name": "Create Branches"
+    },
+    {
+      "parameters": {
+        "content": "0 = match\n1 = review\n2 = no match"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1232,
+        -128
+      ],
+      "id": "8500c9c4-0dad-40f1-93c4-b2ce11a70109",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Filter Out\n\nz0074 \nand also add something that listing can only be mapped with the same units required"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        288,
+        -272
+      ],
+      "id": "079e008d-7de2-4e50-824c-9513501dac7d",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "formTitle": "Migration Tool",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "SKU"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.3,
+      "position": [
+        -352,
+        64
+      ],
+      "id": "76a76c2d-2692-4ea7-b3d7-5786b3f8766c",
+      "name": "On form submission",
+      "webhookId": "b37b975f-cbd7-4f2b-b01d-de4c7217b886"
+    },
+    {
+      "parameters": {
+        "content": "## wokflow should be used as \"tool\" becuse otherwise we need so many edge cases and fallbacks etc",
+        "height": 240
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        656
+      ],
+      "id": "aee728c4-5269-4530-91ae-89284c85cec4",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "tableName": "eBay Listings",
+        "searchColumn": "SKU",
+        "searchTerm": "={{ $json.SKU }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.seaTable",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "1651f2e5-3a7e-4d6a-a7d7-f6f184abd766",
+      "name": "query  ebay listing",
+      "credentials": {
+        "seaTableApi": {
+          "id": "W45Oe674Dw1OFGRe",
+          "name": "SeaTable PIM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "tableName": "Shopify Listings",
+        "searchColumn": "sku",
+        "searchTerm": "={{ $json.SKU }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.seaTable",
+      "typeVersion": 2,
+      "position": [
+        208,
+        192
+      ],
+      "id": "86839b89-a1a3-46e9-acbb-38548b7d8072",
+      "name": "query shopify listing",
+      "credentials": {
+        "seaTableApi": {
+          "id": "W45Oe674Dw1OFGRe",
+          "name": "SeaTable PIM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "or we could firrst check how often a sku exists so if it only exits once for each sales channel we can run it auto"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1424,
+        688
+      ],
+      "id": "d5354a30-abea-4a3e-8ed3-2693a817b579",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f1eb2a0d-2eed-4cf3-90b6-0085bc1be67e",
+              "leftValue": "={{ $json.sku }}",
+              "rightValue": "={{ $('On form submission').item.json.SKU }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        64
+      ],
+      "id": "52bd4011-c27d-4acf-a3ca-a383fd7d4bbd",
+      "name": "Filter Out Incorrect SKUs"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "LktxisQTu30dHhLi",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/LktxisQTu30dHhLi",
+          "cachedResultName": "SFX E-Commerce — SWF: Agent Validate Listing Similarity"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "json": "={{$input}}"
+          },
+          "matchingColumns": [
+            "json"
+          ],
+          "schema": [
+            {
+              "id": "json",
+              "displayName": "json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2192,
+        48
+      ],
+      "name": "Call SWF: Agent Validate Listing Similarity ",
+      "id": "8a484feb-5c1b-4bc6-a7ce-82d1bf4fde33"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "9nDmq5EaX9FeABiZ",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/9nDmq5EaX9FeABiZ",
+          "cachedResultName": "SFX E-Commerce — SWF: Create Listings & Parts Entry"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "confidence": "={{ $json.confidence }}",
+            "ebay_seatable_id": "={{ $json.ebay_seatable_id }}",
+            "ebay_sku": "={{ $json.ebay_sku }}",
+            "ebay_title": "={{ $json.ebay_title }}",
+            "shopify_seatable_id": "={{ $json.shopify_seatable_id }}",
+            "shopify_sku": "={{ $json.shopify_sku }}",
+            "shopify_title": "={{ $json.shopify_title }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ebay_seatable_id",
+              "displayName": "ebay_seatable_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ebay_sku",
+              "displayName": "ebay_sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ebay_title",
+              "displayName": "ebay_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_seatable_id",
+              "displayName": "shopify_seatable_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_sku",
+              "displayName": "shopify_sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_title",
+              "displayName": "shopify_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2528,
+        64
+      ],
+      "name": "Call SWF: Create Listings & Parts Entry ",
+      "id": "8cdd46c0-453c-4f3d-973f-1de0b05eb262"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "9nDmq5EaX9FeABiZ",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/9nDmq5EaX9FeABiZ",
+          "cachedResultName": "SFX E-Commerce — SWF: Create Listings & Parts Entry"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ebay_seatable_id": "={{ $json.ebay_seatable_id }}",
+            "ebay_sku": "={{ $json.ebay_sku }}",
+            "ebay_title": "={{ $json.ebay_title }}",
+            "shopify_seatable_id": "={{ $json.shopify_seatable_id }}",
+            "shopify_sku": "={{ $json.shopify_sku }}",
+            "shopify_title": "={{ $json.shopify_title }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ebay_seatable_id",
+              "displayName": "ebay_seatable_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ebay_sku",
+              "displayName": "ebay_sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ebay_title",
+              "displayName": "ebay_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_seatable_id",
+              "displayName": "shopify_seatable_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_sku",
+              "displayName": "shopify_sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_title",
+              "displayName": "shopify_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2336,
+        288
+      ],
+      "name": "Call SWF: Create Listings & Parts Entry 1",
+      "id": "f785c04c-ad2d-4483-af9d-41dd185b3778"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "9nDmq5EaX9FeABiZ",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/9nDmq5EaX9FeABiZ",
+          "cachedResultName": "SFX E-Commerce — SWF: Create Listings & Parts Entry"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "confidence": "={{ $json.confidence }}",
+            "ebay_seatable_id": "={{ $json.ebay_seatable_id }}",
+            "ebay_sku": "={{ $json.ebay_sku }}",
+            "ebay_title": "={{ $json.ebay_title }}",
+            "shopify_seatable_id": "={{ $json.shopify_seatable_id }}",
+            "shopify_sku": "={{ $json.shopify_sku }}",
+            "shopify_title": "={{ $json.shopify_title }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ebay_seatable_id",
+              "displayName": "ebay_seatable_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ebay_sku",
+              "displayName": "ebay_sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "ebay_title",
+              "displayName": "ebay_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_seatable_id",
+              "displayName": "shopify_seatable_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_sku",
+              "displayName": "shopify_sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "shopify_title",
+              "displayName": "shopify_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2112,
+        -144
+      ],
+      "name": "Call SWF: Create Listings & Parts Entry 2",
+      "id": "18afeb04-d05c-4841-ab23-bd184f9ef9ea"
+    },
+    {
+      "parameters": {
+        "compare": "selectedFields",
+        "fieldsToCompare": "shopify_title, ebay_title",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        1712,
+        176
+      ],
+      "id": "7db4bdf8-07cb-4fe9-b5de-a2b5ef8ca7b7",
+      "name": "Remove Duplicates"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Create OpenAI Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Set shopify data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create OpenAI Embeddings1": {
+      "main": [
+        [
+          {
+            "node": "Set eBay Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set eBay Data": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set shopify data": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Filter Out Incorrect SKUs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Create Branches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Branches": {
+      "main": [
+        [
+          {
+            "node": "Call SWF: Create Listings & Parts Entry 2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call SWF: Agent Validate Listing Similarity ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Remove Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "query  ebay listing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "query shopify listing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "query  ebay listing": {
+      "main": [
+        [
+          {
+            "node": "Create OpenAI Embeddings1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "query shopify listing": {
+      "main": [
+        [
+          {
+            "node": "Create OpenAI Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Out Incorrect SKUs": {
+      "main": [
+        [
+          {
+            "node": "Compare Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call SWF: Agent Validate Listing Similarity ": {
+      "main": [
+        [
+          {
+            "node": "Call SWF: Create Listings & Parts Entry ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Call SWF: Create Listings & Parts Entry 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "3b9ef30c-bcbd-40ce-a990-a99f2e67bfc9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1bc0f4fa5e7d17ac362404cbb49337e51e5061e019cfa24022a8667c1f1ce287"
+  },
+  "id": "nB9feALXqoD56J57",
+  "tags": []
+}

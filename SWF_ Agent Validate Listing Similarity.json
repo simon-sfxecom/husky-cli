@@ -1,0 +1,230 @@
+{
+  "name": "SWF: Agent Validate Listing Similarity",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0b3d283b-1a3c-41f6-a08b-8c87d8ef4671",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "matc",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2416,
+        -16
+      ],
+      "id": "346f3961-0050-4844-b5af-6807f3b4cd66",
+      "name": "Check if status is matched"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        2208,
+        -32
+      ],
+      "id": "80d30215-ff5f-48f9-8f56-ff49196aa3c7",
+      "name": "Split Out Items"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=data:\n\n{{ $json.toJsonString() }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "# Product & Vehicle Matching Validator\n\nYou are a specialized data validation assistant for e-commerce product matching. Your task is to analyze pairs of product listings (e.g., from eBay and Shopify) and determine if they represent the same product or vehicle.\n\n## Input Format\nYou will receive JSON data containing:\n- `ebay_available_id`, `ebay_sku`, `ebay_title`\n- `shopify_available_id`, `shopify_sku`, `shopify_title`\n- `similarity` score (0-1)\n- `status` field\n\n## Validation Criteria\n\n### 1. Product Matching (E-Scooter Parts)\n**MATCH** if:\n- SKU/Artikelnummer identisch (case-insensitive)\n- Hauptproduktname + kritische Specs übereinstimmen:\n  - Modellnummer (z.B. \"60/70-7\", \"8.5x2\")\n  - Fahrzeugmodell (z.B. \"Xiaomi M365\", \"Ninebot G30\")\n  - Teil-Typ (z.B. \"Reifen\", \"Bremse\", \"Display\")\n- Similarity Score ≥ 0.85\n\n**NO MATCH** if:\n- Unterschiedliche Hauptteile (z.B. Reifen vs. Schlauch)\n- Inkompatible Modellnummern\n- Abweichende kritische Maße/Specs\n- Similarity Score < 0.70\n\n### 2. Vehicle Matching\n**MATCH** if:\n- Marke + Modell + (Jahr ODER Typ) identisch\n- z.B. \"Xiaomi Mi Scooter Pro 2\" = \"Xiaomi Pro 2\"\n- Toleranz bei Schreibweisen: \"M365\" = \"Mi 365\"\n\n**NO MATCH** if:\n- Verschiedene Generationen (Pro vs. Pro 2)\n- Unterschiedliche Marken\n- Regional-Varianten ohne Kreuz-Kompatibilität\n\n## Output Format\n\nReturn JSON:\n```json\n{\n  \"is_valid_match\": true|false,\n  \"confidence\": 0.0-1.0,\n  \"reasoning\": \"Kurze Begründung auf Deutsch\",\n  \"match_type\": \"exact_sku\"|\"title_match\"|\"vehicle_match\"|\"no_match\",\n  \"flags\": [\"z.B. sku_mismatch\", \"model_conflict\"]\n}\n```\n\n## Examples\n\n**Input:**\n```json\n{\n  \"ebay_title\": \"Xiaomi M 365 Pro Tubeless Reifen 60/70-7\",\n  \"shopify_title\": \"Tubeless Reifen für Xiaomi M Pro M365 mit Geleinlage 60/70-7\",\n  \"similarity\": 0.876\n}\n```\n\n**Output:**\n```json\n{\n  \"is_valid_match\": true,\n  \"confidence\": 0.92,\n  \"reasoning\": \"Gleiches Fahrzeug (M365 Pro), gleicher Teil (Tubeless Reifen), identische Größe (60/70-7)\",\n  \"match_type\": \"title_match\",\n  \"flags\": []\n}\n```\n\n## Edge Cases\n- **Bundles vs. Einzelteile**: NO MATCH wenn eBay \"2er Set\", Shopify \"Einzeln\"\n- **OEM vs. Aftermarket**: MATCH wenn funktional identisch\n- **Sprachvarianten**: \"Reifen\" = \"Tire\", \"Bremse\" = \"Brake\" → MATCH\n\nBe strict but pragmatic. Prioritize preventing false positives (wrong matches) over false negatives (missed matches)."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1872,
+        -48
+      ],
+      "id": "e55dc93a-dd93-46b0-b5d8-68d29f557a0a",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "json",
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "id": "7438023d-21a6-4c70-a8f0-30a0a33c1b2c",
+      "typeVersion": 1.1,
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        1584,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-pro",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1728,
+        192
+      ],
+      "id": "b619cae0-5252-44b4-9d85-b17d9bd0013a",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "a6KzcByikdJJdm8F",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "[\n  {\n    \"ebay_seatable_id\": \"BDFKFNmTSvWMY0kFcy_Hmw\",\n    \"ebay_sku\": \"Z0102\",\n    \"ebay_title\": \"Xiaomi 4 Pro Max Tubeless Reifen 60/70-7 mit Gelschicht Aftermarket\",\n    \"shopify_seatable_id\": \"WS80o7RhSZSvFYVSZ1wYvg\",\n    \"shopify_sku\": \"Z0102\",\n    \"shopify_title\": \"Tubeless Reifen für Xiaomi 4 Pro Max mit Gelschicht 60/70-7\",\n    \"confidence\": 0.96,\n    \"status\": \"match\"\n  }]"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2112,
+        208
+      ],
+      "id": "a78d7e33-4997-48c5-acf8-11ac4bcb0cfe",
+      "name": "Structured Output Parser"
+    }
+  ],
+  "pinData": {
+    "Start": [
+      {
+        "json": {
+          "json": {
+            "context": {},
+            "item": {
+              "json": {
+                "status": "review",
+                "confidence": 0.834358653763591,
+                "ebay_sku": "Z0248",
+                "ebay_title": "Innova Reifen 12,5x2.125 (57-203) Aftermarket Ersatz",
+                "ebay_seatable_id": "fqq7ul_dQhmGKuhqgGG7xQ",
+                "shopify_sku": "Z0248",
+                "shopify_title": "Reifen 12,5x2.125 Zoll (57-203) Innova",
+                "shopify_seatable_id": "M8z0ZrbvTAu4fOyTbLqgFQ"
+              },
+              "pairedItem": {
+                "item": 0
+              }
+            },
+            "params": {
+              "mode": "expression",
+              "numberOutputs": 3,
+              "output": "={{ $json.status === 'match' ? 0 : ($json.status === 'review' ? 1 : 2) }}",
+              "looseTypeValidation": false
+            }
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Split Out Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Items": {
+      "main": [
+        [
+          {
+            "node": "Check if status is matched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if status is matched": {
+      "main": [
+        []
+      ]
+    },
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2208c8e7-7bc4-478d-9196-86a93564fe1b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1bc0f4fa5e7d17ac362404cbb49337e51e5061e019cfa24022a8667c1f1ce287"
+  },
+  "id": "LktxisQTu30dHhLi",
+  "tags": []
+}

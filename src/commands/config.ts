@@ -4,21 +4,19 @@ import { join } from "path";
 import { homedir } from "os";
 import { ErrorHelpers, errorWithHint, ExplainTopic } from "../lib/error-hints.js";
 import { getApiClient } from "../lib/api-client.js";
+import { AGENT_ROLES, isValidAgentRole, type AgentRole } from "@husky/shared";
 
-// Valid agent roles - used for runtime validation
-const VALID_ROLES = ["admin", "supervisor", "worker", "reviewer", "e2e_agent", "pr_agent", "support", "devops", "purchasing", "ops"] as const;
+// Re-export for backward compatibility
+const VALID_ROLES = AGENT_ROLES;
 
 const CONFIG_DIR = join(homedir(), ".husky");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
-
-// Agent roles for RBAC (must match dashboard types)
-type AgentRole = typeof VALID_ROLES[number];
 
 /**
  * Validate if a string is a valid AgentRole
  */
 function isValidRole(role: string): role is AgentRole {
-  return VALID_ROLES.includes(role as AgentRole);
+  return isValidAgentRole(role);
 }
 
 interface Config {
@@ -64,6 +62,8 @@ interface Config {
   wattizBaseUrl?: string;
   wattizLanguage?: string;
   gcsBucket?: string;
+  shopifyDomain?: string;
+  shopifyToken?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)

@@ -1,0 +1,420 @@
+{
+  "name": "SWF:Vehicle Handling",
+  "nodes": [
+    {
+      "parameters": {
+        "text": "={{ $json.title_combined }}",
+        "attributes": {
+          "attributes": [
+            {
+              "name": "product",
+              "description": "Beschreibung des Ersatzteiles z.B Bremshebel für Xiaomi Mi 1s, 6001 Kugellager",
+              "required": true
+            },
+            {
+              "name": "models",
+              "description": "Alle kompatiblen E-Scooter-Modelle im Text. Falls keine Modelle genau genannt werden dann nur ausgeben: Generic. Falls im Titel Angaben zu Bremssystemen stehen z.B für Shimano XY oder Magura XY dann ist es auch Generic.",
+              "required": true
+            },
+            {
+              "name": "MountingPositions",
+              "description": "If the product is mounted in the Front, Rear, Left or / and Right. \n\nOptions are: Left, Right, Rear, Front",
+              "required": true
+            },
+            {
+              "name": "Type",
+              "description": "If the product is OEM, Aftermarket ( third-party) or the Original part",
+              "required": true
+            },
+            {
+              "name": "SKU",
+              "description": "Product sku if mentioned for example: Z0092. The syntax can be SKU:Z101  or SKU:HI-90XY the sku is then Z0101 or HI-90XY etc"
+            }
+          ]
+        },
+        "options": {
+          "systemPromptTemplate": "You are an expert extraction algorithm.\nOnly extract relevant information from the text.\nIf you do not know the value of an attribute asked to extract, you may omit the attribute's value."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        -672,
+        -224
+      ],
+      "id": "edcc4d16-2e0d-4104-a964-0bf4b8466ef6",
+      "name": "Information Extractor"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -704,
+        -32
+      ],
+      "id": "0f245fb2-35e0-4765-9790-54b6d5d4a91a",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "sDhWf4fRwgjfoMmu",
+          "name": "OpenAi account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "10167377-d89d-4341-b8c4-247c930b7188",
+              "name": "product_name",
+              "value": "={{ $json.output.product }}",
+              "type": "string"
+            },
+            {
+              "id": "333036ca-b900-4953-80fe-01dc5f5bd33a",
+              "name": "vehicles",
+              "value": "={{ $json.output.models.split(\",\") }}",
+              "type": "array"
+            },
+            {
+              "id": "b3efe4fd-a646-4445-a4fb-9fbf434efbd2",
+              "name": "MountingPositions",
+              "value": "={{ $json.output.MountingPositions }}",
+              "type": "string"
+            },
+            {
+              "id": "fc72f111-9332-4c9e-b193-a21b0ad831a5",
+              "name": "Type",
+              "value": "={{ $json.output.Type }}",
+              "type": "string"
+            },
+            {
+              "id": "477f8f25-b244-4b85-9374-b84885c8e67a",
+              "name": "SKU",
+              "value": "={{ $('When Executed by Another Workflow').item.json.sku }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -272,
+        -224
+      ],
+      "id": "151e97b6-83cd-4f75-b53a-801047df0e00",
+      "name": "Prepare Data"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "vehicles",
+        "include": "allOtherFields",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        -224
+      ],
+      "id": "151e3758-97a4-4de2-a68c-d63df72e25a8",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "sku"
+            },
+            {
+              "name": "title_combined"
+            },
+            {
+              "name": "extra_vehicle_data"
+            },
+            {
+              "name": "type"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -960,
+        -224
+      ],
+      "id": "79a949ae-c666-4c78-98ce-c63e8a75991d",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "L7pkxjcEXjzK8J8H",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/L7pkxjcEXjzK8J8H",
+          "cachedResultName": "SFX E-Commerce — SWF: Find Vehicle"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "vehicles": "={{ $('Split Out').item.json.vehicles }}"
+          },
+          "matchingColumns": [
+            "vehicles"
+          ],
+          "schema": [
+            {
+              "id": "vehicles",
+              "displayName": "vehicles",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        288,
+        -224
+      ],
+      "name": "Call SWF: Find Vehicle",
+      "id": "472a1740-cd61-4149-aa6c-6be8568c5296"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "80f80de7-6b46-4bc6-bc31-bda52e4066ac",
+              "name": "part_name",
+              "value": "={{ $('Split Out').item.json.product_name }}",
+              "type": "string"
+            },
+            {
+              "id": "9bebd517-42de-43da-82be-48d77aa4b397",
+              "name": "type",
+              "value": "={{ $('Prepare Data').item.json.Type }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        496,
+        -224
+      ],
+      "id": "01d33c88-6aa8-4793-a066-969b1b0a7fda",
+      "name": "set meta_data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: items mit deiner ursprünglichen Struktur\nconst grouped = {};\n\nitems.forEach(item => {\n  const key = `${item.json.type}|${item.json.MountingPositions}|${item.json.part_name}`;\n  \n  if (!grouped[key]) {\n    grouped[key] = {\n      type: item.json.type,\n      MountingPositions: item.json.MountingPositions,\n      nocodb_vehicle_variant_id: [],\n      success: item.json.success,\n      part_name: item.json.part_name\n    };\n  }\n  \n  const variantId = String(item.json.nocodb_vehicle_variant_id);\n  if (!grouped[key].nocodb_vehicle_variant_id.includes(variantId)) {\n    grouped[key].nocodb_vehicle_variant_id.push(variantId);\n  }\n});\n\nreturn Object.values(grouped).map(item => ({ \n  json: {\n    ...item,\n    nocodb_vehicle_variant_id: item.nocodb_vehicle_variant_id.join(',')\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -224
+      ],
+      "id": "bd8a8f24-519d-4184-9279-4fde0a626e24",
+      "name": "Group & Join Vehicle Variants"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "64a8416f-72d5-4d27-b9bc-0563f6fcbddf",
+              "name": "type",
+              "value": "={{ $('Prepare Data').item.json.Type }}",
+              "type": "string"
+            },
+            {
+              "id": "a1cf7b3f-7d00-4935-bb47-c3ad4dd9b6fa",
+              "name": "MountingPositions",
+              "value": "={{ $('Prepare Data').item.json.MountingPositions }}",
+              "type": "string"
+            },
+            {
+              "id": "30084eaa-9912-41c5-84b4-3ee1ece9fe82",
+              "name": "nocodb_vehicle_variant_id",
+              "value": "={{ $json.nocodb_vehicle_variant_id }}",
+              "type": "string"
+            },
+            {
+              "id": "8d5a3c15-fc3c-495b-9eb3-48c5feb43db4",
+              "name": "success",
+              "value": "={{ $json.nocodb_vehicle_variant_id.isNotEmpty() }}",
+              "type": "boolean"
+            },
+            {
+              "id": "9b9aff77-f52e-4482-8b82-92ec7968d582",
+              "name": "part_name",
+              "value": "={{ $json.part_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1136,
+        -224
+      ],
+      "id": "15a5a363-742b-4dc2-988e-b8bd8ae2412a",
+      "name": "Set Data"
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "sku": "Z0103",
+          "title_combined": "Ninebot Segway F20D F30D F40D F40D2 Tubeless Reifen  Off-road 60/70-6.5 (10x2.5)",
+          "extra_vehicle_data": null,
+          "type": "OEM"
+        }
+      }
+    ],
+    "Set Data": [
+      {
+        "json": {
+          "type": "Aftermarket",
+          "MountingPositions": "Front, Rear",
+          "nocodb_vehicle_variant_id": "175,180,185",
+          "success": true,
+          "part_name": "Tubeless Reifen Off-road 60/70-6.5 (10x2.5)"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Information Extractor": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Call SWF: Find Vehicle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Information Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call SWF: Find Vehicle": {
+      "main": [
+        [
+          {
+            "node": "set meta_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "set meta_data": {
+      "main": [
+        [
+          {
+            "node": "Set Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Data": {
+      "main": [
+        [
+          {
+            "node": "Group & Join Vehicle Variants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "41f7377e-9ed7-4585-a7ab-b536f82ba96c",
+  "meta": {
+    "instanceId": "1bc0f4fa5e7d17ac362404cbb49337e51e5061e019cfa24022a8667c1f1ce287"
+  },
+  "id": "726G2PrHrVYAnd5m",
+  "tags": []
+}

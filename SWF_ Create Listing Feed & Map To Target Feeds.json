@@ -1,0 +1,400 @@
+{
+  "name": "SWF: Create Listing Feed & Map To Target Feeds",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "cNsjqrvgdOljTEPI",
+          "mode": "id",
+          "cachedResultUrl": "/workflow/cNsjqrvgdOljTEPI"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ebay_feed_id": "={{ $json.ebay_feed_id }}",
+            "Title": "={{ $json.Title }}",
+            "sku": "={{ $json.sku }}",
+            "shopify_feed_id": "={{ $json.shopify_feed_id }}",
+            "units_required": 1
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ebay_feed_id",
+              "displayName": "ebay_feed_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "sku",
+              "displayName": "sku",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "shopify_feed_id",
+              "displayName": "shopify_feed_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "units_required",
+              "displayName": "units_required",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2384,
+        -96
+      ],
+      "id": "f791e7cc-40df-43c0-8b93-ea2374ec8b26",
+      "name": "Create ListingFeed"
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "update",
+        "projectId": "pobn8zbs31sbv00",
+        "table": "mcfsrmiy8oo9c8d",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "Id",
+              "fieldValue": "={{ $('Start').item.json.ebay_feed_id }}"
+            },
+            {
+              "fieldName": "ListingFeed_id",
+              "fieldValue": "={{ $json.Id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        2976,
+        -256
+      ],
+      "id": "ab65971a-496a-40a8-8591-3ef44766a3fd",
+      "name": "Map eBay Feed To Listing Feed",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "hC8iDZn6xgWzmONK",
+          "name": "NocoDB virav"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "update",
+        "projectId": "pobn8zbs31sbv00",
+        "table": "m1d5rhlfjhm2uek",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "Id",
+              "fieldValue": "={{ $('Start').item.json.shopify_feed_id }}"
+            },
+            {
+              "fieldName": "ListingFeed_id",
+              "fieldValue": "={{ $json.Id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        2960,
+        -560
+      ],
+      "id": "fa8e87a3-81ed-472a-92fe-694bd2e74c4c",
+      "name": "Map Shopify Feed To Listing Feed",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "hC8iDZn6xgWzmONK",
+          "name": "NocoDB virav"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "ebay_feed_id",
+              "type": "number"
+            },
+            {
+              "name": "shopify_feed_id",
+              "type": "number"
+            },
+            {
+              "name": "Title"
+            },
+            {
+              "name": "sku"
+            }
+          ]
+        }
+      },
+      "id": "4ec5a039-d7a4-4b9a-88d6-18d44a251deb",
+      "typeVersion": 1.1,
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        2176,
+        -96
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2720,
+        -368
+      ],
+      "id": "ab29c0d9-4fdf-45d2-ac22-bd6b444c6325",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a85e8ad6-dbf2-4171-9fa5-7a3d29232ec7",
+              "leftValue": "={{ $('Start').item.json.ebay_feed_id }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2656,
+        -32
+      ],
+      "id": "abcec145-9d65-448d-bb2d-648666be4e34",
+      "name": "Check if ebay_feed_id does exist"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a85e8ad6-dbf2-4171-9fa5-7a3d29232ec7",
+              "leftValue": "={{ $('Start').item.json.shopify_feed_id }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2512,
+        -464
+      ],
+      "id": "5ebe8d02-5936-4e29-b845-1215d81ab8ae",
+      "name": "Check if shopify_feed_id does exist"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2880,
+        0
+      ],
+      "id": "73e8033d-506c-4345-a6a8-323d860b611f",
+      "name": "No Operation, do nothing1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3264,
+        -464
+      ],
+      "id": "d300985d-8aaf-464a-a098-0b25f45b22a8",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {
+    "Start": [
+      {
+        "json": {
+          "shopify_feed_id": 758,
+          "Title": "Segway Ninebot F25i Reifen 10x2,125 - 6,5 Zoll",
+          "sku": "Z0011"
+        }
+      },
+      {
+        "json": {
+          "shopify_feed_id": 759,
+          "Title": "Segway Ninebot F65 Reifen 10x2,125 - 6,5 Zoll",
+          "sku": "Z0011"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Create ListingFeed": {
+      "main": [
+        [
+          {
+            "node": "Check if shopify_feed_id does exist",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check if ebay_feed_id does exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Create ListingFeed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if ebay_feed_id does exist": {
+      "main": [
+        [
+          {
+            "node": "Map eBay Feed To Listing Feed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if shopify_feed_id does exist": {
+      "main": [
+        [
+          {
+            "node": "Map Shopify Feed To Listing Feed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Shopify Feed To Listing Feed": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map eBay Feed To Listing Feed": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "478adf22-a0da-4cd5-8f93-d9458eeb3a9a",
+  "meta": {
+    "instanceId": "1bc0f4fa5e7d17ac362404cbb49337e51e5061e019cfa24022a8667c1f1ce287"
+  },
+  "id": "OG4WyIBTcPfG6Rm8",
+  "tags": []
+}
