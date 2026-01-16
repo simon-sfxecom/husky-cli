@@ -19,7 +19,6 @@
     "test:integration": "vitest run tests/integration"
   },
   "dependencies": {
-    "@husky/shared": "workspace:*",
     "@anthropic-ai/claude-code": "^1.0.0",
     "@google-cloud/storage": "^7.14.0",
     "@google-cloud/vertexai": "^1.10.0",
