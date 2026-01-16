@@ -404,7 +404,7 @@ taskCommand
         priority: options.priority,
         instructions: options.instructions,
         ensureVM: options.vm !== false, // --no-vm sets options.vm to false
-      });
+      }) as { vm?: { created: boolean; name: string; estimatedReadyIn: string } };
 
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));

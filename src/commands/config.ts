@@ -4,7 +4,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { ErrorHelpers, errorWithHint, ExplainTopic } from "../lib/error-hints.js";
 import { getApiClient } from "../lib/api-client.js";
-import { AGENT_ROLES, isValidAgentRole, type AgentRole } from "@husky/shared";
+import { AGENT_ROLES, isValidAgentRole, type AgentRole } from "../types/roles.js";
 
 // Re-export for backward compatibility
 const VALID_ROLES = AGENT_ROLES;

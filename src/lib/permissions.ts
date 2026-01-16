@@ -8,11 +8,9 @@
 import { getConfig, hasPermission, getRole, fetchAndCacheRole, clearRoleCache } from "../commands/config.js";
 import { ExplainTopic } from "./error-hints.js";
 
-// Import canonical role type from shared package
-import type { AgentRole as SharedAgentRole } from "@husky/shared";
+import type { AgentRole } from "../types/roles.js";
 
-// Re-export for CLI usage
-export type AgentRole = SharedAgentRole;
+export type { AgentRole };
 
 /**
  * Check if current user has a specific permission.
