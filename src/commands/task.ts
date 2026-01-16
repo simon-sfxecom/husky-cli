@@ -385,6 +385,7 @@ taskCommand
   .requiredOption("--worker <hostname>", "Target worker hostname (e.g., worker-1)")
   .option("--priority <level>", "Priority: low, normal, high, urgent", "normal")
   .option("--instructions <text>", "Additional instructions for the worker")
+  .option("--no-vm", "Don't create preemptible VM if worker is not running")
   .option("--json", "Output as JSON")
   .action(async (id, options) => {
     const config = ensureConfig();
@@ -402,6 +403,7 @@ taskCommand
         targetHostname: options.worker,
         priority: options.priority,
         instructions: options.instructions,
+        ensureVM: options.vm !== false, // --no-vm sets options.vm to false
       });
 
       if (options.json) {
@@ -414,6 +416,13 @@ taskCommand
         if (options.instructions) {
           console.log(`  Instructions: ${options.instructions.slice(0, 50)}...`);
         }
+
+        // Show VM info if a new VM was created
+        if (result.vm?.created) {
+          console.log(`\n  🖥️  Created preemptible VM: ${result.vm.name}`);
+          console.log(`      VM will be ready in ${result.vm.estimatedReadyIn}`);
+        }
+
         console.log(`\n  The worker-bridge on ${options.worker} will inject this task into OpenCode.`);
       }
     } catch (error) {
