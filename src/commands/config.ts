@@ -141,11 +141,11 @@ export async function fetchAndCacheRole(): Promise<{ role?: AgentRole; permissio
             headers: { "x-api-key": config.apiKey },
           });
 
-          // If role-specific endpoint fails, fall back to whoami
-          if (!res.ok) {
+          // If role-specific endpoint fails, fall back to whoami with session token
+          if (!res.ok && config.sessionToken) {
             url = new URL("/api/auth/whoami", config.apiUrl);
             res = await fetch(url.toString(), {
-              headers: { "x-api-key": config.apiKey },
+              headers: { "Authorization": `Bearer ${config.sessionToken}` },
             });
           }
 
