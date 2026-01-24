@@ -31,10 +31,12 @@ const API_KEY_ROLES = [
  * Fetch VM Identity Token from GCP Metadata Server
  * This token is cryptographically signed by Google and proves the caller is running on a specific GCP VM.
  * Returns null if not running on GCP or metadata server is unavailable.
+ *
+ * Note: format=full is required to include google.compute_engine claims (instance_name, project_id, etc.)
  */
 async function getVMIdentityToken(audience: string = "husky-api"): Promise<string | null> {
   try {
-    const url = `http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${audience}`;
+    const url = `http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${audience}&format=full`;
     const res = await fetch(url, {
       headers: { "Metadata-Flavor": "Google" },
       signal: AbortSignal.timeout(3000), // 3 second timeout
