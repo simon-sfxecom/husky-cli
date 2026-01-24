@@ -27,6 +27,28 @@ const API_KEY_ROLES = [
   "purchasing", "ops", "e2e_agent", "pr_agent"
 ] as const;
 
+/**
+ * Fetch VM Identity Token from GCP Metadata Server
+ * This token is cryptographically signed by Google and proves the caller is running on a specific GCP VM.
+ * Returns null if not running on GCP or metadata server is unavailable.
+ */
+async function getVMIdentityToken(audience: string = "husky-api"): Promise<string | null> {
+  try {
+    const url = `http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${audience}`;
+    const res = await fetch(url, {
+      headers: { "Metadata-Flavor": "Google" },
+      signal: AbortSignal.timeout(3000), // 3 second timeout
+    });
+
+    if (res.ok) {
+      return (await res.text()).trim();
+    }
+  } catch {
+    // Not on GCP or metadata server unavailable - this is expected for local development
+  }
+  return null;
+}
+
 type ApiKeyRole = typeof API_KEY_ROLES[number];
 
 interface ApiKeyListItem {
@@ -327,7 +349,8 @@ authCommand
 authCommand
   .command("login")
   .description("Create a session token for this agent")
-  .requiredOption("--agent <name>", "Agent name (must be registered in Firestore)")
+  .requiredOption("--agent <name>", "Agent name or alias (must be registered in Firestore)")
+  .option("--force", "Clear existing session before creating new one")
   .option("--json", "Output as JSON")
   .action(async (options) => {
     try {
@@ -337,14 +360,29 @@ authCommand
         process.exit(1);
       }
 
+      // Clear existing session if --force flag is set
+      if (options.force) {
+        clearSessionConfig();
+        clearPermissionsCache();
+      }
+
+      // Try to get VM Identity Token from GCP Metadata Server
+      // This will be null on local development machines
+      const vmIdentityToken = await getVMIdentityToken();
+
       const url = new URL("/api/auth/session", config.apiUrl);
+      const requestBody: Record<string, unknown> = { agent: options.agent };
+      if (vmIdentityToken) {
+        requestBody.vmIdentityToken = vmIdentityToken;
+      }
+
       const res = await fetch(url.toString(), {
         method: "POST",
         headers: {
           "x-api-key": config.apiKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ agent: options.agent }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!res.ok) {
@@ -495,14 +533,22 @@ authCommand
         process.exit(1);
       }
 
+      // Try to get VM Identity Token from GCP Metadata Server
+      const vmIdentityToken = await getVMIdentityToken();
+
       const url = new URL("/api/auth/session", config.apiUrl);
+      const requestBody: Record<string, unknown> = { agent: agentName };
+      if (vmIdentityToken) {
+        requestBody.vmIdentityToken = vmIdentityToken;
+      }
+
       const res = await fetch(url.toString(), {
         method: "POST",
         headers: {
           "x-api-key": config.apiKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ agent: agentName }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!res.ok) {
