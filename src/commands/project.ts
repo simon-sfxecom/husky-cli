@@ -301,6 +301,169 @@ projectCommand
     }
   });
 
+projectCommand
+  .command("list-configs")
+  .description("List all project configurations")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    const config = ensureConfig();
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/project-configs`, {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+
+      const configs = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(configs, null, 2));
+      } else {
+        printProjectConfigs(configs);
+      }
+    } catch (error) {
+      console.error("Error fetching project configs:", error);
+      process.exit(1);
+    }
+  });
+
+projectCommand
+  .command("show-config <repo>")
+  .description("Show configuration for a repository (owner/repo)")
+  .option("--json", "Output as JSON")
+  .action(async (repo, options) => {
+    const config = ensureConfig();
+
+    try {
+      const url = new URL("/api/project-configs", config.apiUrl);
+      url.searchParams.set("repo", repo);
+
+      const res = await fetch(url.toString(), {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          console.error(`Error: No configuration found for repository ${repo}`);
+        } else {
+          console.error(`Error: API returned ${res.status}`);
+        }
+        process.exit(1);
+      }
+
+      const projectConfig = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(projectConfig, null, 2));
+      } else {
+        printProjectConfigDetail(projectConfig);
+      }
+    } catch (error) {
+      console.error("Error fetching project config:", error);
+      process.exit(1);
+    }
+  });
+
+projectCommand
+  .command("enable-pr-agent <repo>")
+  .description("Enable PR Agent for a repository (owner/repo)")
+  .option("--json", "Output as JSON")
+  .action(async (repo, options) => {
+    const config = ensureConfig();
+
+    try {
+      const res = await fetch(`${config.apiUrl}/api/project-configs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          repo,
+          prAgentEnabled: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${res.status}`);
+      }
+
+      const projectConfig = await res.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(projectConfig, null, 2));
+      } else {
+        console.log(`✓ PR Agent enabled for ${repo}`);
+        console.log(`  Repository: ${projectConfig.repo}`);
+        console.log(`  PR Agent: ${projectConfig.prAgentEnabled ? "Enabled" : "Disabled"}`);
+      }
+    } catch (error) {
+      console.error("Error enabling PR Agent:", error);
+      process.exit(1);
+    }
+  });
+
+projectCommand
+  .command("disable-pr-agent <repo>")
+  .description("Disable PR Agent for a repository (owner/repo)")
+  .option("--json", "Output as JSON")
+  .action(async (repo, options) => {
+    const config = ensureConfig();
+
+    try {
+      const url = new URL("/api/project-configs", config.apiUrl);
+      url.searchParams.set("repo", repo);
+
+      const getRes = await fetch(url.toString(), {
+        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+      });
+
+      if (!getRes.ok) {
+        if (getRes.status === 404) {
+          console.error(`Error: No configuration found for repository ${repo}`);
+        } else {
+          console.error(`Error: API returned ${getRes.status}`);
+        }
+        process.exit(1);
+      }
+
+      const projectConfig = await getRes.json();
+
+      const updateRes = await fetch(`${config.apiUrl}/api/project-configs/${projectConfig.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          prAgentEnabled: false,
+        }),
+      });
+
+      if (!updateRes.ok) {
+        const errorData = await updateRes.json().catch(() => ({}));
+        throw new Error(errorData.error || `API error: ${updateRes.status}`);
+      }
+
+      const updatedConfig = await updateRes.json();
+
+      if (options.json) {
+        console.log(JSON.stringify(updatedConfig, null, 2));
+      } else {
+        console.log(`✓ PR Agent disabled for ${repo}`);
+        console.log(`  Repository: ${updatedConfig.repo}`);
+        console.log(`  PR Agent: ${updatedConfig.prAgentEnabled ? "Enabled" : "Disabled"}`);
+      }
+    } catch (error) {
+      console.error("Error disabling PR Agent:", error);
+      process.exit(1);
+    }
+  });
+
 // ============================================
 // KNOWLEDGE MANAGEMENT COMMANDS
 // ============================================
@@ -532,7 +695,6 @@ function printKnowledgeList(projectId: string, knowledge: ProjectKnowledge[]) {
     );
   }
 
-  // Summary by category
   const byCategory: Record<string, number> = {};
   for (const entry of knowledge) {
     byCategory[entry.category] = (byCategory[entry.category] || 0) + 1;
@@ -544,4 +706,51 @@ function printKnowledgeList(projectId: string, knowledge: ProjectKnowledge[]) {
     .map(([cat, count]) => `${KNOWLEDGE_CATEGORY_CONFIG[cat]?.label || cat}: ${count}`)
     .join(", ");
   console.log(`  By Category: ${categoryStr}\n`);
+}
+
+interface ProjectConfig {
+  id: string;
+  repo: string;
+  prAgentEnabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function printProjectConfigs(configs: ProjectConfig[]) {
+  if (configs.length === 0) {
+    console.log("\n  No project configurations found.");
+    console.log("  Enable PR Agent with: husky project enable-pr-agent <owner/repo>\n");
+    return;
+  }
+
+  console.log("\n  PROJECT CONFIGURATIONS");
+  console.log("  " + "-".repeat(80));
+  console.log(
+    `  ${"REPOSITORY".padEnd(40)} ${"PR AGENT".padEnd(15)} ${"UPDATED".padEnd(20)}`
+  );
+  console.log("  " + "-".repeat(80));
+
+  for (const config of configs) {
+    const status = config.prAgentEnabled ? "✓ Enabled" : "✗ Disabled";
+    const updated = new Date(config.updatedAt).toLocaleDateString();
+    const truncatedRepo = config.repo.length > 38 ? config.repo.substring(0, 35) + "..." : config.repo;
+
+    console.log(
+      `  ${truncatedRepo.padEnd(40)} ${status.padEnd(15)} ${updated}`
+    );
+  }
+
+  console.log("  " + "-".repeat(80));
+  console.log(`  Total: ${configs.length} configuration(s)\n`);
+}
+
+function printProjectConfigDetail(config: ProjectConfig) {
+  console.log(`\n  Project Configuration: ${config.repo}`);
+  console.log("  " + "=".repeat(60));
+  console.log(`  ID:          ${config.id}`);
+  console.log(`  Repository:  ${config.repo}`);
+  console.log(`  PR Agent:    ${config.prAgentEnabled ? "✓ Enabled" : "✗ Disabled"}`);
+  console.log(`  Created:     ${new Date(config.createdAt).toLocaleString()}`);
+  console.log(`  Updated:     ${new Date(config.updatedAt).toLocaleString()}`);
+  console.log("");
 }
