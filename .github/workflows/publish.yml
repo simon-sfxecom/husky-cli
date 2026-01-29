@@ -32,6 +32,7 @@ jobs:
         run: |
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           NPM_VERSION=$(npm view @simonfestl/husky-cli version 2>/dev/null || echo "0.0.0")
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
             echo "should_publish=true" >> $GITHUB_OUTPUT
             echo "New version $PACKAGE_VERSION (npm has $NPM_VERSION)"
@@ -45,3 +46,20 @@ jobs:
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Authenticate to Google Cloud
+        if: steps.version.outputs.should_publish == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Update API MIN_CLI_VERSION
+        if: steps.version.outputs.should_publish == 'true'
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.package_version }}
+        run: |
+          gcloud run services update husky-api \
+            --region=europe-west1 \
+            --update-env-vars="MIN_CLI_VERSION=$PKG_VERSION" \
+            --project=tigerv0
+          echo "Updated MIN_CLI_VERSION to $PKG_VERSION"
