@@ -280,5 +280,102 @@ program
     }
   });
 
+/**
+ * Wait for plan approval (worker command)
+ *
+ * Exit codes:
+ *   0 = approved
+ *   1 = rejected
+ *   2 = revision_requested
+ *   3 = timeout
+ */
+program
+  .command("await")
+  .description("Wait for supervisor to approve/reject a plan (worker)")
+  .argument("<id>", "Plan ID to wait for")
+  .option("--timeout <seconds>", "Timeout in seconds (default: 300)", "300")
+  .option("--interval <seconds>", "Poll interval in seconds (default: 5)", "5")
+  .option("--json", "Output result as JSON")
+  .action(async (id, options) => {
+    const timeout = parseInt(options.timeout, 10) * 1000;
+    const interval = parseInt(options.interval, 10) * 1000;
+    const startTime = Date.now();
+    const api = getApiClient();
+
+    if (!options.json) {
+      console.log(chalk.yellow(`⏳ Waiting for plan ${id} approval...`));
+      console.log(chalk.dim(`   Timeout: ${options.timeout}s, Poll interval: ${options.interval}s`));
+    }
+
+    while (true) {
+      try {
+        const result = await api.get<PlanGetResponse>(`/api/plans/${id}`);
+        const { plan } = result;
+
+        if (plan.status === "approved") {
+          if (options.json) {
+            console.log(JSON.stringify({ status: "approved", notes: plan.supervisorNotes }));
+          } else {
+            console.log(chalk.green("\n✓ Plan approved!"));
+            if (plan.supervisorNotes) {
+              console.log(chalk.dim(`  Supervisor notes: ${plan.supervisorNotes}`));
+            }
+            console.log(chalk.dim("  You may proceed with implementation."));
+          }
+          process.exit(0);
+        }
+
+        if (plan.status === "rejected") {
+          if (options.json) {
+            console.log(JSON.stringify({ status: "rejected", notes: plan.supervisorNotes }));
+          } else {
+            console.log(chalk.red("\n✗ Plan rejected"));
+            if (plan.supervisorNotes) {
+              console.log(chalk.dim(`  Reason: ${plan.supervisorNotes}`));
+            }
+          }
+          process.exit(1);
+        }
+
+        if (plan.status === "revision_requested") {
+          if (options.json) {
+            console.log(JSON.stringify({ status: "revision_requested", notes: plan.supervisorNotes }));
+          } else {
+            console.log(chalk.blue("\n🔄 Revision requested"));
+            if (plan.supervisorNotes) {
+              console.log(chalk.dim(`  Feedback: ${plan.supervisorNotes}`));
+            }
+            console.log(chalk.dim("  Please update and resubmit the plan."));
+          }
+          process.exit(2);
+        }
+
+        // Still pending - check timeout
+        if (Date.now() - startTime >= timeout) {
+          if (options.json) {
+            console.log(JSON.stringify({ status: "timeout", elapsed: Math.round((Date.now() - startTime) / 1000) }));
+          } else {
+            console.log(chalk.yellow("\n⏱️ Timeout reached"));
+            console.log(chalk.dim(`  Plan is still pending after ${options.timeout}s`));
+          }
+          process.exit(3);
+        }
+
+        // Wait before next poll
+        if (!options.json) {
+          process.stdout.write(".");
+        }
+        await new Promise((resolve) => setTimeout(resolve, interval));
+      } catch (error) {
+        if (options.json) {
+          console.log(JSON.stringify({ status: "error", message: error instanceof Error ? error.message : String(error) }));
+        } else {
+          console.error(chalk.red("\n✗ Error checking plan status:"), error instanceof Error ? error.message : error);
+        }
+        process.exit(1);
+      }
+    }
+  });
+
 export const planCommand = program;
 export default program;
