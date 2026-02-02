@@ -2,18 +2,23 @@ import { Command } from "commander";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getConfig } from "./config.js";
 import { z } from "zod";
+import { apiRequest } from "../lib/api-client.js";
 
 // Input validation schemas
 const YouTubeUrlSchema = z.string().min(1, "YouTube URL cannot be empty");
 
 const YouTubeOptionsSchema = z.object({
   json: z.boolean().optional(),
-  prompt: z.string().max(10000, "Custom prompt too long (max 10000 characters)").optional()
+  prompt: z.string().max(10000, "Custom prompt too long (max 10000 characters)").optional(),
+  language: z.enum(["en", "de"]).optional(),
+  useProxy: z.boolean().optional(),
 });
 
 interface YouTubeOptions {
   json?: boolean;
   prompt?: string;
+  language?: "en" | "de";
+  useProxy?: boolean;
 }
 
 export const youtubeCommand = new Command("youtube")
@@ -21,6 +26,8 @@ export const youtubeCommand = new Command("youtube")
   .argument("<url>", "YouTube video URL")
   .option("--json", "Output as JSON")
   .option("--prompt <prompt>", "Custom summarization prompt")
+  .option("--language <lang>", "Summary language (en, de)", "de")
+  .option("--no-proxy", "Skip API proxy, use direct Gemini API")
   .action(async (url: string, options: YouTubeOptions) => {
     try {
       // Validate URL
@@ -29,7 +36,25 @@ export const youtubeCommand = new Command("youtube")
       // Validate options
       const validatedOptions = YouTubeOptionsSchema.parse(options);
 
-      await summarizeVideo(validatedUrl, validatedOptions);
+      // Try proxy first (if not disabled)
+      if (validatedOptions.useProxy !== false) {
+        try {
+          await summarizeViaProxy(validatedUrl, validatedOptions);
+          return;
+        } catch (error) {
+          const err = error as Error;
+          // Only fall back on auth/access errors, not on video errors
+          if (!err.message.includes("403") && !err.message.includes("401") && !err.message.includes("Forbidden")) {
+            throw error;
+          }
+          if (!validatedOptions.json) {
+            console.log("⚠️  Proxy unavailable, falling back to direct API...\n");
+          }
+        }
+      }
+
+      // Fall back to direct API
+      await summarizeVideoDirect(validatedUrl, validatedOptions);
     } catch (error) {
       if (error instanceof z.ZodError) {
         console.error("Error: Invalid input");
@@ -71,14 +96,62 @@ function extractVideoId(url: string): string {
 }
 
 /**
- * Summarize YouTube video using Gemini (directly with URL)
+ * Summarize via API proxy (uses server-side credentials)
  */
-async function summarizeVideo(url: string, options: YouTubeOptions): Promise<void> {
+async function summarizeViaProxy(url: string, options: YouTubeOptions): Promise<void> {
   const videoId = extractVideoId(url);
   const fullUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-  console.log(`📹 Video: ${videoId}`);
-  console.log(`🔗 URL: ${fullUrl}\n`);
+  if (!options.json) {
+    console.log(`📹 Video: ${videoId}`);
+    console.log(`🔗 URL: ${fullUrl}`);
+    console.log(`🌐 Using API proxy...\n`);
+  }
+
+  interface ProxySummarizeResponse {
+    success: boolean;
+    videoId: string;
+    url: string;
+    summary: string;
+    language: string;
+  }
+
+  const result = await apiRequest<ProxySummarizeResponse>("/api/proxy/youtube/summarize", {
+    method: "POST",
+    body: {
+      url: fullUrl,
+      prompt: options.prompt,
+      language: options.language || "de",
+    },
+  });
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      videoId: result.videoId,
+      url: result.url,
+      summary: result.summary,
+      language: result.language,
+    }, null, 2));
+  } else {
+    console.log('📝 Zusammenfassung:');
+    console.log('='.repeat(70));
+    console.log(result.summary);
+    console.log('='.repeat(70));
+    console.log(`\n✓ URL: ${result.url}`);
+  }
+}
+
+/**
+ * Summarize YouTube video using direct Gemini API (fallback)
+ */
+async function summarizeVideoDirect(url: string, options: YouTubeOptions): Promise<void> {
+  const videoId = extractVideoId(url);
+  const fullUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  if (!options.json) {
+    console.log(`📹 Video: ${videoId}`);
+    console.log(`🔗 URL: ${fullUrl}\n`);
+  }
 
   // Get Gemini API key
   // Priority: Standard Gemini API (has 3.0) > Vertex AI (has 2.5 Pro) > Config
@@ -113,14 +186,31 @@ async function summarizeVideo(url: string, options: YouTubeOptions): Promise<voi
   const modelName = isVertex ? "gemini-2.5-pro" : "gemini-3.0-flash";
   const modelLabel = isVertex ? "Gemini 2.5 Pro (Vertex AI)" : "Gemini 3.0 Flash";
 
-  console.log(`🤖 Analyzing with ${modelLabel}...\n`);
+  if (!options.json) {
+    console.log(`🤖 Analyzing with ${modelLabel}...\n`);
+  }
 
   // Initialize Gemini
   const genAI = new GoogleGenerativeAI(geminiApiKey);
   const model = genAI.getGenerativeModel({ model: modelName });
 
   // Custom prompt or default
-  const prompt = options.prompt || `
+  const prompt = options.prompt || (options.language === "en" ? `
+Create a structured summary of this YouTube video.
+
+Format:
+## Main Topics
+[3-5 key points]
+
+## Key Insights
+[Most important learnings]
+
+## Summary
+[1-2 paragraph overview]
+
+## Keywords
+[Relevant keywords, comma-separated]
+  `.trim() : `
 Erstelle eine strukturierte Zusammenfassung dieses YouTube Videos.
 
 Format:
@@ -135,7 +225,7 @@ Format:
 
 ## Keywords
 [Relevante Keywords kommagetrennt]
-  `.trim();
+  `.trim());
 
   // Gemini can directly analyze YouTube URLs
   let summary: string;

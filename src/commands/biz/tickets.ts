@@ -1,15 +1,37 @@
 /**
  * Husky Biz Tickets Command
  * 
- * Manages support tickets via Zendesk API
+ * Manages support tickets via Zendesk API.
+ * Supports API proxy (server-side credentials) with fallback to direct API.
+ * 
+ * Proxy Support:
+ * - list, get, create, reply, search commands try proxy first
+ * - Other commands use direct API (local credentials required)
+ * - Use --no-proxy flag to skip proxy
  */
 
 import { Command } from "commander";
-import { ZendeskClient } from "../../lib/biz/index.js";
+import { ZendeskClient, tryZendeskProxy, ZendeskProxyClient } from "../../lib/biz/index.js";
 import { AgentBrain } from "../../lib/biz/agent-brain.js";
 import * as fs from "fs";
 import * as path from "path";
 import { errorWithAutoHint } from "../../lib/error-hints.js";
+
+// Helper to get client - tries proxy first for supported operations
+async function getClient(options: { noProxy?: boolean } = {}): Promise<ZendeskClient | ZendeskProxyClient> {
+    if (!options.noProxy) {
+        const proxy = await tryZendeskProxy();
+        if (proxy) {
+            return proxy;
+        }
+    }
+    return ZendeskClient.fromConfig();
+}
+
+// Type guard to check if client is proxy client
+function isProxyClient(client: ZendeskClient | ZendeskProxyClient): client is ZendeskProxyClient {
+    return 'isAvailable' in client;
+}
 
 export const ticketsCommand = new Command("tickets")
     .description("Manage support tickets (Zendesk)");
@@ -21,9 +43,10 @@ ticketsCommand
     .option("-s, --status <status>", "Filter by status (new, open, pending, solved, closed)")
     .option("-l, --limit <num>", "Number of tickets", "25")
     .option("--json", "Output as JSON")
+    .option("--no-proxy", "Skip API proxy, use direct API")
     .action(async (options) => {
         try {
-            const client = ZendeskClient.fromConfig();
+            const client = await getClient(options);
             const tickets = await client.listTickets({
                 per_page: parseInt(options.limit, 10),
                 status: options.status,
@@ -34,7 +57,8 @@ ticketsCommand
                 return;
             }
 
-            console.log(`\n  🎫 Tickets (${tickets.length})\n`);
+            const proxyLabel = isProxyClient(client) ? " (via proxy)" : "";
+            console.log(`\n  🎫 Tickets (${tickets.length})${proxyLabel}\n`);
 
             if (tickets.length === 0) {
                 console.log("  No tickets found.");
@@ -59,14 +83,25 @@ ticketsCommand
     .command("get <id>")
     .description("Get ticket with conversation history")
     .option("--json", "Output as JSON")
+    .option("--no-proxy", "Skip API proxy, use direct API")
     .action(async (id, options) => {
         try {
-            const client = ZendeskClient.fromConfig();
+            const client = await getClient(options);
             const ticketId = parseInt(id, 10);
-            const [ticket, comments] = await Promise.all([
-                client.getTicket(ticketId),
-                client.getTicketComments(ticketId),
-            ]);
+
+            let ticket: { id: number; subject: string; status: string; priority?: string | null; created_at: string; updated_at: string; tags?: string[]; description?: string };
+            let comments: Array<{ body: string; public: boolean; created_at: string; author_id?: number; attachments?: Array<{ id: number; file_name: string }> }>;
+
+            if (isProxyClient(client)) {
+                const result = await client.getTicket(ticketId);
+                ticket = result.ticket;
+                comments = result.comments;
+            } else {
+                [ticket, comments] = await Promise.all([
+                    client.getTicket(ticketId),
+                    client.getTicketComments(ticketId),
+                ]);
+            }
 
             if (options.json) {
                 console.log(JSON.stringify({ ticket, comments }, null, 2));
@@ -110,11 +145,18 @@ ticketsCommand
     .command("reply <id>")
     .description("Reply to a ticket (public)")
     .requiredOption("-m, --message <text>", "Reply message")
+    .option("--no-proxy", "Skip API proxy, use direct API")
     .action(async (id, options) => {
         try {
-            const client = ZendeskClient.fromConfig();
-            const ticket = await client.addComment(parseInt(id, 10), options.message, true);
-            console.log(`✓ Public reply added to ticket #${ticket.id}`);
+            const client = await getClient(options);
+            const ticketId = parseInt(id, 10);
+
+            if (isProxyClient(client)) {
+                await client.replyToTicket(ticketId, options.message, true);
+            } else {
+                await client.addComment(ticketId, options.message, true);
+            }
+            console.log(`✓ Public reply added to ticket #${id}`);
         } catch (error) {
             console.error("Error:", (error as Error).message);
             process.exit(1);
@@ -339,9 +381,10 @@ ticketsCommand
     .option("-e, --email <email>", "Requester email")
     .option("-p, --priority <priority>", "Priority (low, normal, high, urgent)")
     .option("--json", "Output as JSON")
+    .option("--no-proxy", "Skip API proxy, use direct API")
     .action(async (options) => {
         try {
-            const client = ZendeskClient.fromConfig();
+            const client = await getClient(options);
 
             const ticketData: {
                 subject: string;
@@ -360,7 +403,12 @@ ticketsCommand
                 ticketData.priority = options.priority;
             }
 
-            const ticket = await client.createTicket(ticketData);
+            let ticket;
+            if (isProxyClient(client)) {
+                ticket = await client.createTicket(ticketData);
+            } else {
+                ticket = await client.createTicket(ticketData);
+            }
 
             if (options.json) {
                 console.log(JSON.stringify(ticket, null, 2));
@@ -382,9 +430,10 @@ ticketsCommand
     .command("search <query>")
     .description("Search tickets (Zendesk search syntax)")
     .option("--json", "Output as JSON")
+    .option("--no-proxy", "Skip API proxy, use direct API")
     .action(async (query, options) => {
         try {
-            const client = ZendeskClient.fromConfig();
+            const client = await getClient(options);
             const tickets = await client.searchTickets(query);
 
             if (options.json) {

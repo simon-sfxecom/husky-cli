@@ -41,6 +41,7 @@ import { authCommand } from "./commands/auth.js";
 import { businessCommand } from "./commands/business.js";
 import { planCommand } from "./commands/plan.js";
 import { diagramsCommand } from "./commands/diagrams.js";
+import { checkVersion } from "./lib/version-check.js";
 
 // Read version from package.json
 const require = createRequire(import.meta.url);
@@ -97,10 +98,21 @@ if (process.argv.includes("--llm")) {
   process.exit(0);
 }
 
-// Check if no command was provided - run interactive mode
-if (process.argv.length <= 2) {
-  runInteractiveMode();
-} else {
-  program.parse();
+const skipVersionCheck = ["--version", "-V", "--help", "-h", "completion"].some(
+  (flag) => process.argv.includes(flag)
+);
+
+async function main() {
+  if (!skipVersionCheck) {
+    await checkVersion({ silent: process.env.HUSKY_SKIP_VERSION_CHECK === "1" });
+  }
+  
+  if (process.argv.length <= 2) {
+    runInteractiveMode();
+  } else {
+    program.parse();
+  }
 }
+
+main();
 // trigger CI

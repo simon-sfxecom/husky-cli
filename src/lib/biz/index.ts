@@ -4,6 +4,7 @@
 
 export { BillbeeClient } from './billbee.js';
 export { ZendeskClient } from './zendesk.js';
+export { ZendeskProxyClient, getZendeskProxyClient, tryZendeskProxy } from './zendesk-proxy.js';
 export { SeaTableClient } from './seatable.js';
 export { QdrantClient } from './qdrant.js';
 export { EmbeddingService, EMBEDDING_MODELS } from './embeddings.js';

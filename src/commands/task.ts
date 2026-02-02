@@ -166,7 +166,8 @@ taskCommand
       // Note: We don't pass projectId to API to avoid Firestore index requirement
       // Instead, we filter client-side which is fine for reasonable task counts
       const api = getApiClient();
-      let tasks: Task[] = await api.get<Task[]>(url.pathname + url.search);
+      const response = await api.get<{ tasks: Task[] }>(url.pathname + url.search);
+      let tasks: Task[] = response.tasks;
 
       // Client-side filtering by projectId (avoids Firestore composite index)
       if (filterProjectId) {
