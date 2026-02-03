@@ -42,6 +42,8 @@ import { businessCommand } from "./commands/business.js";
 import { planCommand } from "./commands/plan.js";
 import { diagramsCommand } from "./commands/diagrams.js";
 import { supervisorCommand } from "./commands/supervisor.js";
+import { sessionCommand } from "./commands/session.js";
+import { insightsCommand } from "./commands/insights.js";
 import { checkVersion } from "./lib/version-check.js";
 
 // Read version from package.json
@@ -93,6 +95,8 @@ program.addCommand(businessCommand);
 program.addCommand(planCommand);
 program.addCommand(diagramsCommand);
 program.addCommand(supervisorCommand);
+program.addCommand(sessionCommand);
+program.addCommand(insightsCommand);
 
 // Handle --llm flag specially
 if (process.argv.includes("--llm")) {

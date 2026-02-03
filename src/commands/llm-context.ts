@@ -309,6 +309,43 @@ husky brain stats                       # Statistiken
 `;
 }
 
+function getSessionSection(): string {
+    return `
+---
+
+## Session Logging (Self-Improving System)
+
+> [!NOTE]
+> Sessions werden automatisch geloggt und bei VM-Shutdown exportiert.
+> Analysierte Sessions ermoeglichen semantische Suche nach aehnlichen Problemen/Loesungen.
+
+\`\`\`bash
+# Session Management
+husky session current                   # Zeigt aktuelle Session
+husky session list --limit 10           # Sessions auflisten
+husky session log --tool "Bash" ...     # Tool-Call loggen (via Hook)
+husky session export --to-firestore     # Logs exportieren
+
+# Analyse & Embeddings
+husky session analyze                   # Analyse triggern (async)
+husky session embed                     # Embeddings generieren
+husky session summary                   # Analyse-Summary anzeigen
+
+# Semantische Suche (mit Vector Embeddings)
+husky session search "trigger fehler"   # Nach aehnlichen Problemen suchen
+husky session search "RLS" --type errors      # Nur Fehler
+husky session search "fix" --type learnings   # Nur Learnings
+\`\`\`
+
+### Insights (Aggregierte Analytics)
+\`\`\`bash
+husky insights errors --since 7d        # Fehler der letzten 7 Tage
+husky insights learnings --since 7d     # Learnings anzeigen
+husky insights stats --since 7d         # Aggregierte Statistiken
+\`\`\`
+`;
+}
+
 function getVMSection(): string {
     return `
 ---
@@ -467,6 +504,9 @@ export function generateLLMContext(role?: string, permissions?: string[]): strin
 
     // Brain - always included
     context += getBrainSection(effectiveRole);
+
+    // Session Logging - always included
+    context += getSessionSection();
 
     // Tips - always included
     context += getTips();

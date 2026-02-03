@@ -93,11 +93,21 @@ function validateApiUrl(url: string): { valid: boolean; error?: string } {
 
 export function getConfig(): Config {
   try {
-    if (!existsSync(CONFIG_FILE)) {
-      return {};
+    let config: Config = {};
+    if (existsSync(CONFIG_FILE)) {
+      const content = readFileSync(CONFIG_FILE, "utf-8");
+      config = JSON.parse(content);
     }
-    const content = readFileSync(CONFIG_FILE, "utf-8");
-    return JSON.parse(content);
+
+    // Environment variable overrides (useful for testing)
+    if (process.env.HUSKY_API_URL) {
+      config.apiUrl = process.env.HUSKY_API_URL;
+    }
+    if (process.env.HUSKY_API_KEY) {
+      config.apiKey = process.env.HUSKY_API_KEY;
+    }
+
+    return config;
   } catch {
     return {};
   }
