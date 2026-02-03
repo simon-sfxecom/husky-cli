@@ -267,7 +267,7 @@ supervisorCommand
         headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
       });
       
-      // Get VM status
+      // Get VM status (read-only)
       const vmCommand = "gcloud compute instances list --filter='name~husky-' --format='json(name,status,zone,machineType)'";
       const { stdout: vmOutput } = await execAsync(vmCommand);
       const vms = JSON.parse(vmOutput || "[]");
@@ -331,20 +331,14 @@ supervisorCommand
       
       // Next actions
       console.log("\n🎯 Suggested Actions:");
-      if (backlogTasks.length > 0 && runningWorkers.length === 0) {
-        console.log("  • Start worker VM(s) to handle task backlog");
-      }
-      if (terminatedWorkers.length > 0 && backlogTasks.length > 0) {
-        console.log("  • Resume terminated worker VMs");
-      }
       if (backlogTasks.length > 0) {
-        console.log("  • Assign tasks to available workers");
+        console.log("  • Create tasks only; autoscaling will provision workers");
       }
       if (offlineAgents.length > 0) {
         console.log("  • Check on offline agents");
       }
       if (backlogTasks.length === 0 && runningWorkers.length > 0) {
-        console.log("  • Suspend idle worker VMs to save costs");
+        console.log("  • Autoscaling will handle idle workers");
       }
       
       console.log("\nQuick commands:");
@@ -391,21 +385,8 @@ supervisorCommand
           
           if (tasks.length > 0) {
             console.log(`  Found ${tasks.length} tasks in backlog`);
-            
-            // Step 2: Check available worker VMs
-            const { stdout: vmOutput } = await execAsync(
-              "gcloud compute instances list --filter='name~husky-worker' --format='json(name,status,zone)'"
-            );
-            const vms = JSON.parse(vmOutput || "[]");
-            const runningWorkers = vms.filter((vm: any) => vm.name.includes("worker") && vm.status === "RUNNING");
-            
-            if (runningWorkers.length === 0) {
-              console.log("  No worker VMs running, starting one...");
-              // This would need to be implemented based on your GCP setup
-              console.log("  TODO: Implement VM startup logic");
-            }
-            
-            // Step 3: Assign tasks to workers
+            console.log("  Autoscaling will provision workers via API");
+
             tasks.forEach((task: any) => {
               console.log(`  Task ${task.id}: ${task.title}`);
             });
