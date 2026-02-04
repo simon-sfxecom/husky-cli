@@ -61,6 +61,7 @@ interface Config {
   wattizPassword?: string;
   wattizBaseUrl?: string;
   wattizLanguage?: string;
+  gtasksSubject?: string;
   gcsBucket?: string;
   shopifyDomain?: string;
   shopifyToken?: string;
@@ -482,6 +483,7 @@ configCommand
       "wattiz-password": "wattizPassword",
       "wattiz-base-url": "wattizBaseUrl",
       "wattiz-language": "wattizLanguage",
+    "gtasks-subject": "gtasksSubject",
     };
 
     const configKey = keyMappings[key];
@@ -500,6 +502,7 @@ configCommand
       console.log("  Skuterzone: skuterzone-username, skuterzone-password, skuterzone-base-url");
       console.log("  Emove: emove-username, emove-password, emove-base-url");
       console.log("  Wattiz: wattiz-username, wattiz-password, wattiz-base-url, wattiz-language");
+      console.log("  GTasks: gtasks-subject");
       console.log("  Brain:    agent-type");
       console.error("\n💡 For configuration help: husky explain config");
       process.exit(1);
