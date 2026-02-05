@@ -374,34 +374,7 @@ taskCommand
         }
       }
 
-      // GTasks Integration: Create task for manual review if needed
-      try {
-        const { GoogleTasksClient } = await import("../lib/biz/gtasks.js");
-        
-        // Check if task requires manual action
-        // Heuristic: If task has specific keywords or no PR linked, it might need review
-        const needsManualReview = !options.pr || 
-          task.title.toLowerCase().includes("ui") ||
-          task.title.toLowerCase().includes("test") ||
-          task.title.toLowerCase().includes("review");
-        
-        if (needsManualReview) {
-          const gtasks = await GoogleTasksClient.fromConfig();
-          const gtask = await gtasks.createForHuman(
-            `Review: ${task.title}`,
-            {
-              notes: `Task completed by agent.\n\nHusky Task ID: ${id}\nPR: ${options.pr || "not linked"}\n\nPlease verify the implementation.`,
-              due: "tomorrow",
-              link: options.pr || undefined,
-            }
-          );
-          
-          console.log(`  📋 Created Google Task for manual review: ${gtask.id}`);
-        }
-      } catch (error) {
-        // GTasks is optional, don't fail task completion
-        console.warn(`  ⚠️  GTasks integration failed: ${error instanceof Error ? error.message : error}`);
-      }
+
     } catch (error) {
       console.error("Error completing task:", error);
       process.exit(1);

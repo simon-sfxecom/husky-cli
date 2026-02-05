@@ -18,7 +18,7 @@ import { emoveCommand } from "./biz/emove.js";
 import { wattizCommand } from "./biz/wattiz.js";
 import { shopifyCommand } from "./biz/shopify.js";
 import { supplierFeedCommand } from "./biz/supplier-feed.js";
-import { gtasksCommand } from "./biz/gtasks.js";
+
 import { guards } from "../lib/permissions.js";
 
 export const bizCommand = new Command("biz")
@@ -36,6 +36,6 @@ export const bizCommand = new Command("biz")
     .addCommand(wattizCommand)
     .addCommand(shopifyCommand)
     .addCommand(supplierFeedCommand)
-  .addCommand(gtasksCommand);
+
 
 export default bizCommand;
