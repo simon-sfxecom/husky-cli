@@ -63,7 +63,9 @@ husky task message <id> "msg"           # Post status message
 `;
 
     if (canCreate) {
-        section += `husky task create                       # Create new task
+        section += `husky task create <title>               # Create new task
+husky task create <title> --local      # Create locally (skip queue/autoscale)
+husky task create <title> --queue      # Force queue/autoscale
 `;
     }
     if (canStart) {
@@ -76,6 +78,8 @@ husky task message <id> "msg"           # Post status message
     }
 
     section += `\`\`\`
+
+Note: On non-GCP machines, \`husky task create\` defaults to \`--local\`. Use \`--queue\` to force autoscaling.
 `;
     return section;
 }

@@ -3,6 +3,7 @@ import { getAuthHeaders } from "../config.js";
 import { MenuItem, ValidConfig, ensureConfig, pressEnterToContinue, truncate } from "./utils.js";
 import { resolveProject } from "../../lib/project-resolver.js";
 import { requirePermission } from "../../lib/permissions.js";
+import { isRunningOnGcpVm } from "../../lib/gcp-metadata.js";
 
 interface Task {
   id: string;
@@ -192,6 +193,14 @@ async function createTask(config: ValidConfig): Promise<void> {
       default: "medium",
     });
 
+    const runningOnGcp = await isRunningOnGcpVm();
+    const queueTask = await confirm({
+      message: "Queue task for workers (autoscale)?",
+      default: runningOnGcp,
+    });
+
+    const skipQueue = !queueTask;
+
     const projects = await fetchProjects(config);
     let projectId: string | undefined;
 
@@ -264,6 +273,7 @@ async function createTask(config: ValidConfig): Promise<void> {
         description: description || undefined,
         priority,
         projectId,
+        skipQueue,
       }),
     });
 

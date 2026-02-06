@@ -11,6 +11,7 @@ import { requirePermission } from "../lib/permissions.js";
 import { ErrorHelpers, errorWithHint, errorWithAutoHint, ExplainTopic } from "../lib/error-hints.js";
 import { AgentLock, AgentLockError, checkWorktreeConflict } from "../lib/agent-lock.js";
 import { getApiClient } from "../lib/api-client.js";
+import { isRunningOnGcpVm } from "../lib/gcp-metadata.js";
 
 export const taskCommand = new Command("task")
   .description("Manage tasks");
@@ -441,6 +442,8 @@ taskCommand
   .option("--project <project>", "Project name or ID")
   .option("--path <path>", "Path in project")
   .option("-p, --priority <priority>", "Priority (low, medium, high)", "medium")
+  .option("--local", "Create task locally (skip queue/autoscale)")
+  .option("--queue", "Force task to be queued (enable autoscale)")
   .action(async (title, options) => {
     const config = getConfig();
     if (!config.apiUrl) {
@@ -479,6 +482,18 @@ taskCommand
       resolvedProjectId = resolved.projectId;
     }
 
+    if (options.local && options.queue) {
+      console.error("Error: Use either --local or --queue, not both.");
+      process.exit(1);
+    }
+
+    const explicitSkipQueue = options.local ? true : options.queue ? false : undefined;
+    const skipQueue = explicitSkipQueue ?? !(await isRunningOnGcpVm());
+
+    if (explicitSkipQueue === undefined && skipQueue) {
+      console.log("ℹ️  Local environment detected; task will not be queued. Use --queue to force autoscaling.");
+    }
+
     try {
       const api = getApiClient();
       const task = await api.post<{ id: string; title: string }>("/api/tasks", {
@@ -487,6 +502,7 @@ taskCommand
         projectId: resolvedProjectId,
         linkedPath: options.path,
         priority: options.priority,
+        skipQueue,
       });
       console.log(`✓ Created: #${task.id} ${task.title}`);
     } catch (error) {
