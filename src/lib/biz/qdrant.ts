@@ -71,7 +71,7 @@ export class QdrantClient {
             if (!process.env.QDRANT_URL && !process.env[`${env}_QDRANT_URL`] && !process.env.HUSKY_QDRANT_URL) {
                 throw new Error(
                     'Missing Qdrant URL. Configure with:\n' +
-                    '  husky config set qdrant-url http://10.132.0.46:6333\n' +
+                    '  husky config set qdrant-url http://localhost:6333\n' +
                     'Or set env var: HUSKY_QDRANT_URL\n\n' +
                     'Note: Internal Qdrant VM - no API key needed (VPC secured)'
                 );

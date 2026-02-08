@@ -1,7 +1,17 @@
 import { Command } from "commander";
+import { getConfig } from "./config.js";
 
-const API_URL = process.env.HUSKY_API_URL || "https://huskyv0-dashboard-474966775596.europe-west1.run.app";
-const API_KEY = process.env.HUSKY_API_KEY || "";
+function resolveApiConfig(): { apiUrl: string; apiKey: string } {
+  const config = getConfig();
+  const apiUrl = process.env.HUSKY_API_URL || config.apiUrl;
+  const apiKey = process.env.HUSKY_API_KEY || config.apiKey || "";
+
+  if (!apiUrl) {
+    throw new Error("API URL not configured. Run: husky config set api-url <url>");
+  }
+
+  return { apiUrl, apiKey };
+}
 
 interface ServiceAccountBinding {
   id: string;
@@ -16,11 +26,12 @@ interface ServiceAccountBinding {
 }
 
 async function fetchApi(path: string, options: RequestInit = {}): Promise<Record<string, unknown>> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const { apiUrl, apiKey } = resolveApiConfig();
+  const response = await fetch(`${apiUrl}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": API_KEY,
+      "x-api-key": apiKey,
       ...options.headers,
     },
   });

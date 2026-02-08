@@ -62,7 +62,10 @@ gotessCommand
                 console.log("  SMS sent! Waiting for code via webhook");
                 
                 const config = getConfig();
-                const apiUrl = config.apiUrl || "https://husky-api-474966775596.europe-west1.run.app";
+                const apiUrl = process.env.HUSKY_API_URL || config.apiUrl;
+                if (!apiUrl) {
+                    throw new Error("API URL not configured. Run: husky config set api-url <url>");
+                }
                 
                 const code = await pollSmsCode(apiUrl, smsRequestTime);
                 if (!code) {

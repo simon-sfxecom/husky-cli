@@ -332,7 +332,7 @@ async function showCliConfig(): Promise<void> {
 
 async function setApiUrl(): Promise<void> {
   const url = await input({
-    message: "API URL (e.g., https://your-dashboard.run.app):",
+    message: "API URL (e.g., https://your-api.run.app):",
     validate: (value) => {
       if (!value) return "URL is required";
       if (!value.startsWith("http")) return "URL must start with http:// or https://";
