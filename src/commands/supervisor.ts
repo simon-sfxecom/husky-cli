@@ -306,7 +306,7 @@ supervisorCommand
       }
       
       // VM status
-      console.log("\n🖥️  VM Fleet Status:");
+      console.log("\n🖥️  VM Workspace Status:");
       const runningWorkers = vms.filter((vm: any) => vm.name.includes("worker") && vm.status === "RUNNING");
       const suspendedWorkers = vms.filter((vm: any) => vm.name.includes("worker") && vm.status === "SUSPENDED");
       const terminatedWorkers = vms.filter((vm: any) => vm.name.includes("worker") && vm.status === "TERMINATED");
