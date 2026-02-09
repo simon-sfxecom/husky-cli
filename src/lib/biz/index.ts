@@ -30,3 +30,5 @@ export type {
   SyncStats,
 } from './supplier-feed.js';
 export * from './supplier-feed-types.js';
+export { RedditClient } from './reddit.js';
+export { YouTubeMonitorClient } from './youtube-monitor.js';

@@ -65,6 +65,10 @@ interface Config {
   gcsBucket?: string;
   shopifyDomain?: string;
   shopifyToken?: string;
+  redditClientId?: string;
+  redditClientSecret?: string;
+  youtubeApiKey?: string;
+  xBearerToken?: string;
 }
 
 // API Key validation - must be at least 16 characters, alphanumeric + common key chars (base64, JWT, etc.)
@@ -129,87 +133,55 @@ export function saveConfig(config: Config): void {
 
 /**
  * Fetch role and permissions from /api/auth/whoami
- * Uses session token (Bearer) if available, otherwise falls back to API key.
+ * Uses session token (Bearer) only.
  * Caches the result in config for 1 hour.
  */
 export async function fetchAndCacheRole(): Promise<{ role?: AgentRole; permissions?: string[] }> {
   const config = getConfig();
 
-  // Check if there's an active session - if so, use session role directly
-  // Session roles are already validated by the server, no need to re-fetch
-  if (config.sessionToken && config.sessionRole && config.sessionExpiresAt) {
-    const expiresAt = new Date(config.sessionExpiresAt);
-    if (expiresAt > new Date()) {
-      // Session is active - fetch permissions for this session role if needed
-      // Check if we have fresh permissions for this session
-      const needsPermissionsFetch = !config.roleLastChecked || !config.permissions;
-
-      if (needsPermissionsFetch && config.apiUrl && config.apiKey) {
-        try {
-          // First try the role-specific permissions endpoint
-          let url = new URL(`/api/auth/permissions/${encodeURIComponent(config.sessionRole)}`, config.apiUrl);
-          let res = await fetch(url.toString(), {
-            headers: { "x-api-key": config.apiKey },
-          });
-
-          // If role-specific endpoint fails, fall back to whoami with session token
-          if (!res.ok && config.sessionToken) {
-            url = new URL("/api/auth/whoami", config.apiUrl);
-            res = await fetch(url.toString(), {
-              headers: { "Authorization": `Bearer ${config.sessionToken}` },
-            });
-          }
-
-          if (res.ok) {
-            const data = await res.json();
-            // Update permissions cache (keep sessionRole as source of truth for role)
-            config.permissions = data.permissions;
-            config.roleLastChecked = new Date().toISOString();
-            saveConfig(config);
-            return { role: config.sessionRole as AgentRole, permissions: data.permissions };
-          }
-        } catch {
-          // Fall through to use cached permissions
-        }
-      }
-
-      // Return session role with cached permissions
-      return { role: config.sessionRole as AgentRole, permissions: config.permissions };
-    }
+  // Session token is the only supported auth mode for runtime requests.
+  if (!config.sessionToken || !config.sessionRole || !config.sessionExpiresAt) {
+    return {};
   }
 
-  // No active session - use API key auth
+  if (!isValidRole(config.sessionRole)) {
+    return {};
+  }
+
+  const expiresAt = new Date(config.sessionExpiresAt);
+  if (expiresAt <= new Date()) {
+    return {};
+  }
 
   // Check if we have cached role that's less than 5 minutes old
   // Short TTL ensures revoked permissions are detected quickly
   const PERMISSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-  if (config.role && config.roleLastChecked) {
+  if (config.permissions && config.roleLastChecked) {
     const lastChecked = new Date(config.roleLastChecked);
     const cacheExpiry = new Date(Date.now() - PERMISSION_CACHE_TTL_MS);
     if (lastChecked > cacheExpiry) {
-      return { role: config.role, permissions: config.permissions };
+      return { role: config.sessionRole, permissions: config.permissions };
     }
   }
 
-  // Fetch fresh role/permissions using API key
-  if (!config.apiUrl || !config.apiKey) {
-    return {};
+  // If API URL is unavailable, return the session role with cached permissions.
+  if (!config.apiUrl) {
+    return { role: config.sessionRole, permissions: config.permissions };
   }
 
   try {
     const api = getApiClient();
     const data = await api.get<{ role?: AgentRole; permissions?: string[] }>("/api/auth/whoami");
-    // Update config cache
-    config.role = data.role;
+    // Keep sessionRole as source of truth; refresh permissions from whoami.
     config.permissions = data.permissions;
     config.roleLastChecked = new Date().toISOString();
     saveConfig(config);
-    return { role: data.role, permissions: data.permissions };
+    return { role: config.sessionRole, permissions: data.permissions };
   } catch {
     // Ignore fetch errors, return cached or empty
   }
 
-  return { role: config.role, permissions: config.permissions };
+  return { role: config.sessionRole, permissions: config.permissions };
 }
 
 /**
@@ -231,7 +203,7 @@ export function hasPermission(permission: string): boolean {
 
 /**
  * Get current role from config.
- * Prefers sessionRole (from auth login) over role (from API key) when session is active.
+ * Uses sessionRole (from auth login) when session is active.
  * Validates that the role is a known valid role before returning.
  */
 export function getRole(): AgentRole | undefined {
@@ -249,11 +221,6 @@ export function getRole(): AgentRole | undefined {
       console.error(`Warning: Invalid session role '${config.sessionRole}' in config`);
       return undefined;
     }
-  }
-
-  // Fall back to API key role (also validate)
-  if (config.role && isValidRole(config.role)) {
-    return config.role;
   }
 
   return undefined;
@@ -330,16 +297,16 @@ export function isSessionActive(): boolean {
 
 /**
  * Check if the API is properly configured for making requests.
- * Returns true if we have either an active session or an API key.
+ * Returns true if we have an API URL and an active session.
  */
 export function isApiConfigured(): boolean {
   const config = getConfig();
-  return Boolean(config.apiUrl && (config.apiKey || isSessionActive()));
+  return Boolean(config.apiUrl && isSessionActive());
 }
 
 /**
  * Get authentication headers for API requests.
- * Returns Bearer token if session is active, otherwise x-api-key.
+ * Returns Bearer token if session is active.
  * Use this for all API calls to ensure consistent auth.
  */
 export function getAuthHeaders(): Record<string, string> {
@@ -354,63 +321,80 @@ export function getAuthHeaders(): Record<string, string> {
     }
   }
 
-  // Fall back to API key
-  if (config.apiKey) {
-    return { "x-api-key": config.apiKey };
-  }
-
   return {};
 }
 
 /**
  * Ensure the session is valid, refreshing if needed.
- * Call this before long-running operations (like watch modes).
- * Returns true if session is valid (or was refreshed), false if no session/refresh failed.
+ * Returns true if session is active, false otherwise.
  */
 export async function ensureValidSession(): Promise<boolean> {
   const config = getConfig();
 
+  // No session at all
   if (!config.sessionToken || !config.sessionExpiresAt) {
-    return false; // No session, will use API key
+    return false;
   }
 
   const expiresAt = new Date(config.sessionExpiresAt);
-  const now = new Date();
-  const fiveMinutes = 5 * 60 * 1000;
+  const msLeft = expiresAt.getTime() - Date.now();
 
-  // Refresh if expiring within 5 minutes
-  if (expiresAt.getTime() - now.getTime() < fiveMinutes) {
-    if (!config.apiUrl || !config.apiKey || !config.sessionAgent) {
-      return false; // Can't refresh without these
-    }
-
-    try {
-      const url = new URL("/api/auth/session", config.apiUrl);
-      const res = await fetch(url.toString(), {
-        method: "POST",
-        headers: {
-          "x-api-key": config.apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ agent: config.sessionAgent }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setSessionConfig({
-          token: data.token,
-          expiresAt: data.expiresAt,
-          agent: data.agent,
-          role: data.role,
-        });
-        return true;
-      }
-    } catch {
-      // Refresh failed, continue with current token if not expired
-    }
+  // Refresh if expiring soon (5 min) to avoid 401 mid-command.
+  const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
+  const shouldRefresh = msLeft <= REFRESH_THRESHOLD_MS;
+  if (!shouldRefresh) {
+    return true;
   }
 
-  return expiresAt > now;
+  if (!config.apiUrl) {
+    // Can't refresh without API URL. If the token is already expired, fail.
+    if (msLeft <= 0) {
+      clearSessionConfig();
+      return false;
+    }
+    return true;
+  }
+
+  try {
+    const res = await fetch(new URL("/api/auth/refresh", config.apiUrl).toString(), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${config.sessionToken}` },
+    });
+
+    if (!res.ok) {
+      if (msLeft <= 0) {
+        clearSessionConfig();
+        return false;
+      }
+      // Keep the current token (it is still valid but close to expiry).
+      return true;
+    }
+
+    const data = await res.json() as { token: string; expiresAt: string; role?: string; agent?: { id: string; name?: string; emoji?: string } };
+
+    if (!data.token || !data.expiresAt) {
+      if (msLeft <= 0) {
+        clearSessionConfig();
+        return false;
+      }
+      return true;
+    }
+
+    setSessionConfig({
+      token: data.token,
+      expiresAt: data.expiresAt,
+      agent: data.agent?.id || config.sessionAgent || "unknown",
+      role: data.role || config.sessionRole || "worker",
+    });
+
+    return true;
+  } catch {
+    if (msLeft <= 0) {
+      clearSessionConfig();
+      return false;
+    }
+    return true;
+  }
 }
 
 export function getSessionConfig(): {
@@ -483,7 +467,11 @@ configCommand
       "wattiz-password": "wattizPassword",
       "wattiz-base-url": "wattizBaseUrl",
       "wattiz-language": "wattizLanguage",
-    "gtasks-subject": "gtasksSubject",
+      "gtasks-subject": "gtasksSubject",
+      "reddit-client-id": "redditClientId",
+      "reddit-client-secret": "redditClientSecret",
+      "youtube-api-key": "youtubeApiKey",
+      "x-bearer-token": "xBearerToken",
     };
 
     const configKey = keyMappings[key];
@@ -503,6 +491,7 @@ configCommand
       console.log("  Emove: emove-username, emove-password, emove-base-url");
       console.log("  Wattiz: wattiz-username, wattiz-password, wattiz-base-url, wattiz-language");
       console.log("  GTasks: gtasks-subject");
+      console.log("  Research: reddit-client-id, reddit-client-secret, youtube-api-key, x-bearer-token");
       console.log("  Brain:    agent-type");
       console.error("\n💡 For configuration help: husky explain config");
       process.exit(1);
@@ -536,7 +525,7 @@ configCommand
     saveConfig(config);
 
     // Mask sensitive values in output
-    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token", "gemini-api-key", "nocodb-api-token", "skuterzone-username", "skuterzone-password", "emove-username", "emove-password", "wattiz-username", "wattiz-password"];
+    const sensitiveKeys = ["api-key", "billbee-api-key", "billbee-password", "zendesk-api-token", "seatable-api-token", "gotess-token", "gemini-api-key", "nocodb-api-token", "skuterzone-username", "skuterzone-password", "emove-username", "emove-password", "wattiz-username", "wattiz-password", "reddit-client-secret", "youtube-api-key", "x-bearer-token"];
     const displayValue = sensitiveKeys.includes(key) ? "***" : value;
     console.log(`✓ Set ${key} = ${displayValue}`);
   });
@@ -580,8 +569,9 @@ configCommand
     if (!config.apiUrl) {
       ErrorHelpers.missingApiUrl();
     }
-    if (!config.apiKey) {
-      ErrorHelpers.missingApiKey();
+    if (!isSessionActive()) {
+      console.error("No active session. Run: husky auth login --agent <name>");
+      process.exit(1);
     }
 
     console.log("Testing API connection...");
@@ -594,49 +584,40 @@ configCommand
 
       console.log(`API connection successful (API URL: ${config.apiUrl})`);
 
-      // Check if there's an active session
-      const hasActiveSession = isSessionActive();
+      // Show session info and refresh permission cache from whoami.
+      console.log(`\nSession Info:`);
+      console.log(`  Agent: ${config.sessionAgent || "(unknown)"}`);
+      console.log(`  Role: ${config.sessionRole || "(unknown)"}`);
+      console.log(`  Expires: ${config.sessionExpiresAt ? new Date(config.sessionExpiresAt).toLocaleString() : "(unknown)"}`);
 
-      if (hasActiveSession) {
-        // Show session info instead of fetching from API
-        console.log(`\nSession Info:`);
-        console.log(`  Agent: ${config.sessionAgent || "(unknown)"}`);
-        console.log(`  Role: ${config.sessionRole || "(unknown)"}`);
-        console.log(`  Expires: ${config.sessionExpiresAt ? new Date(config.sessionExpiresAt).toLocaleString() : "(unknown)"}`);
-        console.log(`\n  Use 'husky auth permissions' to see full permissions.`);
-      } else {
-        // No session - fetch API key role from whoami
-        try {
-          const data = await api.get<{ role?: AgentRole; permissions?: string[]; agentId?: string }>("/api/auth/whoami");
-          // Cache the role/permissions (only if no session)
-          const updatedConfig = getConfig();
-          updatedConfig.role = data.role;
-          updatedConfig.permissions = data.permissions;
-          updatedConfig.roleLastChecked = new Date().toISOString();
-          saveConfig(updatedConfig);
+      try {
+        const data = await api.get<{ role?: AgentRole; permissions?: string[]; agentId?: string }>("/api/auth/whoami");
+        const updatedConfig = getConfig();
+        updatedConfig.permissions = data.permissions;
+        updatedConfig.roleLastChecked = new Date().toISOString();
+        saveConfig(updatedConfig);
 
-          console.log(`\nRBAC Info (API Key):`);
-          console.log(`  Role: ${data.role || "(not assigned)"}`);
-          if (data.permissions && data.permissions.length > 0) {
-            console.log(`  Permissions: ${data.permissions.join(", ")}`);
-          }
-          if (data.agentId) {
-            console.log(`  Agent ID: ${data.agentId}`);
-          }
-        } catch {
-          // whoami failed, but tasks worked - connection is fine
+        console.log(`\nRBAC Info (Session):`);
+        console.log(`  Role: ${data.role || config.sessionRole || "(unknown)"}`);
+        if (data.permissions && data.permissions.length > 0) {
+          console.log(`  Permissions: ${data.permissions.join(", ")}`);
         }
+        if (data.agentId) {
+          console.log(`  Agent ID: ${data.agentId}`);
+        }
+      } catch {
+        // whoami failed, but tasks worked - connection is fine
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       if (errorMsg.includes("401")) {
         console.error(`API connection failed: Unauthorized (HTTP 401)`);
-        console.error("  Check your API key with: husky config set api-key <key>");
+        console.error("  Session is missing or expired. Run: husky auth login --agent <name>");
         console.error("\n  For configuration help: husky explain config");
         process.exit(1);
       } else if (errorMsg.includes("403")) {
         console.error(`API connection failed: Forbidden (HTTP 403)`);
-        console.error("  Your API key may not have the required permissions");
+        console.error("  Your session role may not have the required permissions");
         console.error("\n  For configuration help: husky explain config");
         process.exit(1);
       } else if (error instanceof TypeError && errorMsg.includes("fetch")) {

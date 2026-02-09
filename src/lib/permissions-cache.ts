@@ -1,4 +1,4 @@
-import { getConfig, isSessionActive } from "../commands/config.js";
+import { getConfig, getAuthHeaders } from "../commands/config.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -14,26 +14,21 @@ let fetchPromise: Promise<CachedPermissions> | null = null;
 
 async function fetchPermissions(): Promise<CachedPermissions> {
     const config = getConfig();
-    if (!config.apiUrl || !config.apiKey) {
+    if (!config.apiUrl) {
         throw new Error("API not configured");
     }
 
-    // If there's an active session, use the session's role
-    // This ensures permissions match the logged-in agent, not the API key
-    const roleToFetch = isSessionActive() && config.sessionRole
-        ? config.sessionRole
-        : undefined;
-
-    // Build URL - if we have a session role, request permissions for that specific role
-    const url = new URL("/api/auth/whoami", config.apiUrl);
-    if (roleToFetch) {
-        url.searchParams.set("role", roleToFetch);
+    const authHeaders = getAuthHeaders();
+    if (!authHeaders.Authorization) {
+        throw new Error("No active session. Run: husky auth login --agent <name>");
     }
+
+    const url = new URL("/api/auth/whoami", config.apiUrl);
 
     const res = await fetch(url.toString(), {
         method: "GET",
         headers: {
-            "x-api-key": config.apiKey,
+            ...authHeaders,
             "Content-Type": "application/json",
         },
     });
@@ -49,12 +44,8 @@ async function fetchPermissions(): Promise<CachedPermissions> {
         scopes?: string[];
     };
 
-    // If we have a session role, override the returned role with the session role
-    // and fetch permissions for that role
-    const effectiveRole = roleToFetch || data.role;
-    const effectivePermissions = roleToFetch
-        ? await fetchPermissionsForRole(config.apiUrl, config.apiKey, roleToFetch)
-        : data.permissions;
+    const effectiveRole = data.role || config.sessionRole || "unknown";
+    const effectivePermissions = data.permissions || [];
 
     const kbPermissions = effectivePermissions
         .filter((p: string) => p.startsWith("kb:"))
@@ -66,31 +57,6 @@ async function fetchPermissions(): Promise<CachedPermissions> {
         knowledgeBases: kbPermissions,
         fetchedAt: Date.now(),
     };
-}
-
-async function fetchPermissionsForRole(apiUrl: string, apiKey: string, role: string): Promise<string[]> {
-    // Use the /permissions/:role endpoint to get permissions for a specific role
-    const url = new URL(`/api/auth/permissions/${encodeURIComponent(role)}`, apiUrl);
-
-    const res = await fetch(url.toString(), {
-        method: "GET",
-        headers: {
-            "x-api-key": apiKey,
-            "Content-Type": "application/json",
-        },
-    });
-
-    if (!res.ok) {
-        // Fall back to empty permissions if fetch fails
-        return [];
-    }
-
-    const data = await res.json() as {
-        role: string;
-        permissions: string[];
-    };
-
-    return data.permissions || [];
 }
 
 export async function getPermissions(): Promise<CachedPermissions> {

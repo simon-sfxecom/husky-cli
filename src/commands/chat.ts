@@ -1,9 +1,9 @@
 import { Command } from "commander";
-import { getConfig } from "./config.js";
-import { exec } from "child_process";
+import { getAuthHeaders, getConfig } from "./config.js";
+import { execFile } from "child_process";
 import { promisify } from "util";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Helper to get the Husky API URL (for Google Chat integration)
 function getHuskyApiUrl(): string | null {
@@ -27,7 +27,7 @@ chatCommand
 
     try {
       const res = await fetch(`${config.apiUrl}/api/chat/pending`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -78,7 +78,7 @@ chatCommand
 
     try {
       const res = await fetch(`${config.apiUrl}/api/chat?limit=${options.limit}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -134,7 +134,7 @@ chatCommand
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            ...getAuthHeaders(),
           },
           body: JSON.stringify({
             text: message,
@@ -154,7 +154,7 @@ chatCommand
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            ...getAuthHeaders(),
           },
           body: JSON.stringify({
             content: message,
@@ -190,7 +190,7 @@ chatCommand
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           content: response,
@@ -206,7 +206,7 @@ chatCommand
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ messageIds: [messageId] }),
       });
@@ -242,7 +242,7 @@ chatCommand
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           agentId: workerId,
@@ -282,7 +282,7 @@ chatCommand
         await new Promise((resolve) => setTimeout(resolve, pollInterval));
 
         const pollRes = await fetch(`${huskyApiUrl}/api/google-chat/review/${data.id}/poll`, {
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+          headers: getAuthHeaders(),
         });
 
         if (!pollRes.ok) continue;
@@ -324,7 +324,7 @@ chatCommand
 
     try {
       const res = await fetch(`${huskyApiUrl}/api/google-chat/review/${reviewId}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -387,7 +387,7 @@ chatCommand
       if (options.limit) params.set("limit", options.limit);
 
       const res = await fetch(`${huskyApiUrl}/api/google-chat/inbox?${params}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -447,7 +447,7 @@ chatCommand
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           text: message,
@@ -565,7 +565,7 @@ chatCommand
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           fileBase64,
@@ -604,7 +604,7 @@ chatCommand
     try {
       // Fetch inbox to find the message
       const inboxRes = await fetch(`${huskyApiUrl}/api/google-chat/inbox?limit=50`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!inboxRes.ok) {
@@ -639,7 +639,7 @@ chatCommand
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            ...getAuthHeaders(),
           },
           body: JSON.stringify({ text: response }),
         });
@@ -656,7 +656,7 @@ chatCommand
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+            ...getAuthHeaders(),
           },
           body: JSON.stringify({
             text: response,
@@ -673,7 +673,7 @@ chatCommand
         // Mark as read
         await fetch(`${huskyApiUrl}/api/google-chat/inbox/${msg.id}/read`, {
           method: "POST",
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+          headers: getAuthHeaders(),
         });
 
         // Add reaction to original message if messageName is available
@@ -683,7 +683,7 @@ chatCommand
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+                ...getAuthHeaders(),
               },
               body: JSON.stringify({ emoji: "✅" }),
             });
@@ -712,7 +712,7 @@ chatCommand
     try {
       const res = await fetch(`${huskyApiUrl}/api/google-chat/inbox/${messageId}/read`, {
         method: "POST",
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -745,7 +745,7 @@ chatCommand
     const poll = async () => {
       try {
         const res = await fetch(`${huskyApiUrl}/api/google-chat/inbox?unread=true&limit=5`, {
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+          headers: getAuthHeaders(),
         });
 
         if (!res.ok) return;
@@ -822,15 +822,10 @@ chatCommand
         }
       }
 
-      const escapedMessage = formattedMessage
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\$/g, "\\$")
-        .replace(/`/g, "\\`")
-        .replace(/'/g, "'\\''");
-
       try {
-        await execAsync(`tmux send-keys -t "${tmuxTarget}" "${escapedMessage}" Enter`, { timeout: 5000 });
+        await execFileAsync("tmux", ["send-keys", "-t", tmuxTarget, formattedMessage, "Enter"], {
+          timeout: 5000,
+        });
         return true;
       } catch (error) {
         const err = error as Error;
@@ -843,7 +838,7 @@ chatCommand
       try {
         await fetch(`${huskyApiUrl}/api/google-chat/inbox/${messageId}/read`, {
           method: "POST",
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+          headers: getAuthHeaders(),
         });
       } catch {}
     };
@@ -851,7 +846,7 @@ chatCommand
     const poll = async () => {
       try {
         const res = await fetch(`${huskyApiUrl}/api/google-chat/inbox?unread=true&limit=10`, {
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+          headers: getAuthHeaders(),
         });
 
         if (!res.ok) return;
@@ -960,7 +955,7 @@ chatCommand
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           text: formattedMessage,
@@ -986,7 +981,7 @@ chatCommand
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           agentId,
@@ -1060,7 +1055,7 @@ chatCommand
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          ...(config.apiKey ? { "x-api-key": config.apiKey } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ status: "resolved" }),
       });
@@ -1101,7 +1096,7 @@ chatCommand
       if (options.agent) params.set("agentId", options.agent);
 
       const res = await fetch(`${huskyApiUrl}/api/agent-conversations?${params}`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -1162,7 +1157,7 @@ chatCommand
 
     try {
       const res = await fetch(`${huskyApiUrl}/api/google-chat/spaces`, {
-        headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -1236,7 +1231,7 @@ chatCommand
     try {
       while (Date.now() - startTime < timeoutMs) {
         const res = await fetch(`${huskyApiUrl}/api/google-chat/review/${reviewId}/poll`, {
-          headers: config.apiKey ? { "x-api-key": config.apiKey } : {},
+          headers: getAuthHeaders(),
         });
 
         if (res.ok) {

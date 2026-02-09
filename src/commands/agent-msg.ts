@@ -1,10 +1,16 @@
 import { Command } from "commander";
-import { getConfig } from "./config.js";
+import { getConfig, getAuthHeaders } from "./config.js";
 
 async function apiCall(path: string, options: RequestInit = {}) {
   const config = getConfig();
-  if (!config.apiUrl || !config.apiKey) {
-    console.error("Error: API URL and key required. Run: husky config test");
+  if (!config.apiUrl) {
+    console.error("Error: API URL is required. Run: husky config set api-url <url>");
+    process.exit(1);
+  }
+
+  const authHeaders = getAuthHeaders();
+  if (!authHeaders.Authorization) {
+    console.error("Error: Active session required. Run: husky auth login --agent <name>");
     process.exit(1);
   }
 
@@ -12,7 +18,7 @@ async function apiCall(path: string, options: RequestInit = {}) {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": config.apiKey,
+      ...authHeaders,
       ...options.headers,
     },
   });

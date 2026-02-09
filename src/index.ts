@@ -3,7 +3,7 @@
 import { Command } from "commander";
 import { createRequire } from "module";
 import { taskCommand } from "./commands/task.js";
-import { configCommand } from "./commands/config.js";
+import { configCommand, ensureValidSession, getAuthHeaders, getConfig } from "./commands/config.js";
 import { agentCommand } from "./commands/agent.js";
 import { roadmapCommand } from "./commands/roadmap.js";
 import { changelogCommand } from "./commands/changelog.js";
@@ -36,6 +36,7 @@ import { infraCommand } from "./commands/infra.js";
 import { e2eCommand } from "./commands/e2e.js";
 import { prCommand } from "./commands/pr.js";
 import { youtubeCommand } from "./commands/youtube.js";
+import { researchCommand } from "./commands/research.js";
 import { imageCommand } from "./commands/image.js";
 import { authCommand } from "./commands/auth.js";
 import { businessCommand } from "./commands/business.js";
@@ -49,6 +50,54 @@ import { checkVersion } from "./lib/version-check.js";
 // Read version from package.json
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
+
+const originalFetch = globalThis.fetch.bind(globalThis);
+
+function isHuskyApiRequest(requestUrl: URL): boolean {
+  try {
+    const config = getConfig();
+    if (!config.apiUrl) return false;
+    const apiBase = new URL(config.apiUrl);
+    const basePath = apiBase.pathname.replace(/\/$/, "");
+    const apiPrefix = `${basePath}/api/`.replace(/\/{2,}/g, "/");
+    return requestUrl.origin === apiBase.origin && requestUrl.pathname.startsWith(apiPrefix);
+  } catch {
+    return false;
+  }
+}
+
+function isAuthBypassRequest(request: Request): boolean {
+  if (request.method.toUpperCase() !== "POST") return false;
+  const pathname = new URL(request.url).pathname;
+  return pathname.endsWith("/api/auth/session") || pathname.endsWith("/api/auth/refresh");
+}
+
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const request = new Request(input, init);
+  const requestUrl = new URL(request.url);
+
+  if (!isHuskyApiRequest(requestUrl) || isAuthBypassRequest(request)) {
+    return originalFetch(request);
+  }
+
+  const headers = new Headers(request.headers);
+  headers.delete("x-api-key");
+
+  // Always ensure the stored session is valid (refresh if needed), and
+  // always use the current token for Husky API requests.
+  const ok = await ensureValidSession();
+  if (!ok) {
+    throw new Error("No active session. Run: husky auth login --agent <name>");
+  }
+  const authHeaders = getAuthHeaders();
+  const authToken = authHeaders.Authorization;
+  if (!authToken) {
+    throw new Error("No active session. Run: husky auth login --agent <name>");
+  }
+  headers.set("Authorization", authToken);
+
+  return originalFetch(new Request(request, { headers }));
+};
 
 const program = new Command();
 
@@ -89,6 +138,7 @@ program.addCommand(infraCommand);
 program.addCommand(e2eCommand);
 program.addCommand(prCommand);
 program.addCommand(youtubeCommand);
+program.addCommand(researchCommand);
 program.addCommand(imageCommand);
 program.addCommand(authCommand);
 program.addCommand(businessCommand);

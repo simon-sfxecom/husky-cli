@@ -1,4 +1,4 @@
-import { getConfig } from "../../commands/config.js";
+import { getAuthHeaders, getConfig } from "../../commands/config.js";
 import { canAccessKnowledgeBase as checkKbAccess } from "../permissions-cache.js";
 
 export interface Memory {
@@ -39,26 +39,15 @@ async function apiRequest<T>(
         throw new Error("API not configured. Run: husky config set api-url <url>");
     }
 
-    // Prefer session token (JWT), fall back to API key for backwards compatibility
-    const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-    };
-
-    if (config.sessionToken) {
-        // Check if session is expired
-        if (config.sessionExpiresAt) {
-            const expiresAt = new Date(config.sessionExpiresAt);
-            if (expiresAt < new Date()) {
-                throw new Error("Session expired. Run: husky auth login --agent <name>");
-            }
-        }
-        headers["Authorization"] = `Bearer ${config.sessionToken}`;
-    } else if (config.apiKey) {
-        // Legacy fallback - will be rejected by new API but kept for error message
-        headers["x-api-key"] = config.apiKey;
-    } else {
+    const authHeaders = getAuthHeaders();
+    if (!authHeaders.Authorization) {
         throw new Error("Not authenticated. Run: husky auth login --agent <name>");
     }
+
+    const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...authHeaders,
+    };
 
     const url = new URL(`/api/brain${path}`, config.apiUrl);
     const res = await fetch(url.toString(), {
@@ -70,10 +59,6 @@ async function apiRequest<T>(
     if (!res.ok) {
         const error = await res.json().catch(() => ({ error: res.statusText }));
         if (res.status === 401) {
-            // Check if it's the new API rejecting API key auth
-            if (error.upgrade) {
-                throw new Error("Session required. Run: husky auth login --agent <name>");
-            }
             throw new Error(error.message || "Authentication failed");
         }
         if (res.status === 403) {

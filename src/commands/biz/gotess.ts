@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { GotessClient } from "../../lib/biz/gotess.js";
-import { getConfig, setGotessConfig } from "../config.js";
+import { getConfig, getAuthHeaders, setGotessConfig } from "../config.js";
 import * as readline from "readline";
 
 function prompt(question: string): Promise<string> {
@@ -13,7 +13,12 @@ function prompt(question: string): Promise<string> {
     });
 }
 
-async function pollSmsCode(apiUrl: string, afterTimestamp: number, maxRetries = 3): Promise<string | null> {
+async function pollSmsCode(
+    apiUrl: string,
+    afterTimestamp: number,
+    authHeaders: Record<string, string>,
+    maxRetries = 3
+): Promise<string | null> {
     for (let retry = 0; retry < maxRetries; retry++) {
         if (retry > 0) {
             console.log(`\n  Retry ${retry}/${maxRetries - 1}...`);
@@ -22,7 +27,9 @@ async function pollSmsCode(apiUrl: string, afterTimestamp: number, maxRetries = 
         await new Promise(r => setTimeout(r, 60000));
         
         try {
-            const res = await fetch(`${apiUrl}/api/webhooks/sms/latest?after=${afterTimestamp}`);
+            const res = await fetch(`${apiUrl}/api/webhooks/sms/latest?after=${afterTimestamp}`, {
+                headers: authHeaders,
+            });
             const data = await res.json() as { code?: string | null };
             if (data.code) {
                 return data.code;
@@ -66,8 +73,13 @@ gotessCommand
                 if (!apiUrl) {
                     throw new Error("API URL not configured. Run: husky config set api-url <url>");
                 }
+
+                const authHeaders = getAuthHeaders();
+                if (Object.keys(authHeaders).length === 0) {
+                    throw new Error("Not authenticated. Run: husky auth login --agent <name>");
+                }
                 
-                const code = await pollSmsCode(apiUrl, smsRequestTime);
+                const code = await pollSmsCode(apiUrl, smsRequestTime, authHeaders);
                 if (!code) {
                     console.error("\n  ✗ Timeout waiting for SMS code");
                     process.exit(1);
