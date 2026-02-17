@@ -294,12 +294,33 @@ supervisorCommand
       console.log("=" .repeat(50));
       
       // Task status
+      interface TaskSummary {
+        id: string;
+        title: string;
+        priority: string;
+        assignee?: string;
+        status: string;
+      }
+
+      interface VMRecord {
+        name: string;
+        status: string;
+        zone?: string;
+      }
+
+      interface AgentRecord {
+        id: string;
+        name: string;
+        status: "online" | "busy" | "offline";
+        role?: string;
+      }
+
       console.log("\n📋 Task Backlog:");
-      const backlogTasks = tasks.tasks || [];
+      const backlogTasks: TaskSummary[] = tasks.tasks || [];
       if (backlogTasks.length === 0) {
         console.log("  No tasks in backlog");
       } else {
-        backlogTasks.forEach((task: any, i: number) => {
+        backlogTasks.forEach((task: TaskSummary, i: number) => {
           console.log(`  ${i + 1}. ${task.title} (${task.id})`);
           console.log(`     Priority: ${task.priority} | Assignee: ${task.assignee}`);
         });
@@ -307,25 +328,25 @@ supervisorCommand
       
       // VM status
       console.log("\n🖥️  VM Workspace Status:");
-      const runningWorkers = vms.filter((vm: any) => vm.name.includes("worker") && vm.status === "RUNNING");
-      const suspendedWorkers = vms.filter((vm: any) => vm.name.includes("worker") && vm.status === "SUSPENDED");
-      const terminatedWorkers = vms.filter((vm: any) => vm.name.includes("worker") && vm.status === "TERMINATED");
+      const runningWorkers = vms.filter((vm: VMRecord) => vm.name.includes("worker") && vm.status === "RUNNING");
+      const suspendedWorkers = vms.filter((vm: VMRecord) => vm.name.includes("worker") && vm.status === "SUSPENDED");
+      const terminatedWorkers = vms.filter((vm: VMRecord) => vm.name.includes("worker") && vm.status === "TERMINATED");
       
       console.log(`  Running workers: ${runningWorkers.length}`);
       console.log(`  Suspended workers: ${suspendedWorkers.length}`);
       console.log(`  Terminated workers: ${terminatedWorkers.length}`);
       
-      if (vms.find((vm: any) => vm.name.includes("supervisor"))) {
-        const supervisorVm = vms.find((vm: any) => vm.name.includes("supervisor"));
+      if (vms.find((vm: VMRecord) => vm.name.includes("supervisor"))) {
+        const supervisorVm = vms.find((vm: VMRecord) => vm.name.includes("supervisor"));
         console.log(`  Supervisor VM: ${supervisorVm.status}`);
       }
       
       // Agent status
       console.log("\n🤖 Registered Agents:");
-      const agentList = agents.agents || [];
-      const onlineAgents = agentList.filter((agent: any) => agent.status === "online");
-      const busyAgents = agentList.filter((agent: any) => agent.status === "busy");
-      const offlineAgents = agentList.filter((agent: any) => agent.status === "offline");
+      const agentList: AgentRecord[] = agents.agents || [];
+      const onlineAgents = agentList.filter((agent: AgentRecord) => agent.status === "online");
+      const busyAgents = agentList.filter((agent: AgentRecord) => agent.status === "busy");
+      const offlineAgents = agentList.filter((agent: AgentRecord) => agent.status === "offline");
       
       console.log(`  Online: ${onlineAgents.length}, Busy: ${busyAgents.length}, Offline: ${offlineAgents.length}`);
       
@@ -387,7 +408,7 @@ supervisorCommand
             console.log(`  Found ${tasks.length} tasks in backlog`);
             console.log("  Autoscaling will provision workers via API");
 
-            tasks.forEach((task: any) => {
+            tasks.forEach((task: { id: string; title: string }) => {
               console.log(`  Task ${task.id}: ${task.title}`);
             });
           } else {

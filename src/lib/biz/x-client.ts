@@ -37,17 +37,25 @@ interface XRawUser {
   name: string;
 }
 
+interface XApiError {
+  title: string;
+  detail: string;
+  type: string;
+  parameter?: string;
+  value?: string;
+}
+
 interface XSearchResponse {
   data?: XRawTweet[];
   includes?: {
     users?: XRawUser[];
   };
-  errors?: any[];
+  errors?: XApiError[];
 }
 
 interface XUserLookupResponse {
   data?: XRawUser;
-  errors?: any[];
+  errors?: XApiError[];
 }
 
 export class XClient {

@@ -219,7 +219,14 @@ export class EmovePlaywrightClient {
         }
 
         // Extract line items
-        const items: any[] = [];
+        interface OrderLineItem {
+            sku: string;
+            name: string;
+            quantity: number;
+            price: string;
+            total: string;
+        }
+        const items: OrderLineItem[] = [];
         const itemRows = page.locator('table.woocommerce-table--order-details tbody tr.woocommerce-table__line-item');
         const itemCount = await itemRows.count();
 
