@@ -500,16 +500,17 @@ workflowCommand
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
+        const createdCount = Array.isArray(result.steps) ? result.steps.length : 0;
         console.log(`Steps generated successfully!`);
-        console.log(`  Workflow: ${result.workflowName}`);
-        console.log(`  Steps Created: ${result.stepsGenerated}`);
+        console.log(`  Workflow ID: ${result.workflowId || workflowId}`);
+        console.log(`  Steps Created: ${createdCount}`);
         console.log("");
 
         if (result.steps && result.steps.length > 0) {
           console.log("  GENERATED STEPS");
           console.log("  " + "-".repeat(50));
           for (const step of result.steps) {
-            console.log(`  ${step.order + 1}. ${step.name}`);
+            console.log(`  ${(step.order ?? 0) + 1}. ${step.title || step.name || "Unnamed step"}`);
             if (step.description) {
               console.log(`     ${step.description}`);
             }
